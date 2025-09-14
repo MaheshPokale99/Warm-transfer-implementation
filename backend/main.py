@@ -63,8 +63,6 @@ except Exception as e:
     logger.error(f"Failed to initialize room manager: {e}")
     room_manager = None
 
-transfer_service = TransferService(room_manager, None) if room_manager else None
-
 try:
     llm_service = LLMService()
     logger.info("LLM service initialized successfully")
@@ -72,8 +70,7 @@ except Exception as e:
     logger.error(f"Failed to initialize LLM service: {e}")
     llm_service = None
 
-if transfer_service and llm_service:
-    transfer_service.llm_service = llm_service
+transfer_service = TransferService(room_manager, llm_service) if room_manager and llm_service else None
 
 try:
     twilio_service = TwilioService() if os.getenv("TWILIO_ACCOUNT_SID") else None
@@ -86,21 +83,44 @@ except Exception as e:
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: Dict[str, List[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, room_name: str):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        if room_name not in self.active_connections:
+            self.active_connections[room_name] = []
+        self.active_connections[room_name].append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    def disconnect(self, websocket: WebSocket, room_name: str):
+        if room_name in self.active_connections:
+            try:
+                self.active_connections[room_name].remove(websocket)
+                if not self.active_connections[room_name]:
+                    del self.active_connections[room_name]
+            except ValueError:
+                pass
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
+        try:
+            await websocket.send_text(message)
+        except:
+            pass
+
+    async def broadcast_to_room(self, message: str, room_name: str):
+        if room_name in self.active_connections:
+            disconnected = []
+            for connection in self.active_connections[room_name]:
+                try:
+                    await connection.send_text(message)
+                except:
+                    disconnected.append(connection)
+            
+            for connection in disconnected:
+                self.disconnect(connection, room_name)
 
     async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
+        for room_name in list(self.active_connections.keys()):
+            await self.broadcast_to_room(message, room_name)
 
 manager = ConnectionManager()
 
@@ -151,6 +171,14 @@ async def initiate_transfer(request: TransferRequest):
             to_agent=request.to_agent,
             caller_name=request.caller_name
         )
+        
+        # Notify caller about transfer via WebSocket
+        if hasattr(transfer_info, 'caller_token') and hasattr(transfer_info, 'destination_room'):
+            await manager.broadcast_to_room(
+                f"TRANSFER_NOTIFICATION:{transfer_info.caller_token}:{transfer_info.destination_room}:{transfer_info.transfer_id}",
+                request.from_room
+            )
+        
         return transfer_info
     except Exception as e:
         logger.error(f"Error initiating transfer: {e}")
@@ -215,6 +243,7 @@ async def get_available_agents():
             raise HTTPException(status_code=501, detail="Room manager not available")
         
         available_agents = room_manager.get_available_agents()
+        logger.info(f"API returning available agents: {available_agents}")
         return {"agents": available_agents}
     except Exception as e:
         logger.error(f"Error getting available agents: {e}")
@@ -231,7 +260,6 @@ async def debug_transfer(transfer_id: str):
         if not transfer_info:
             raise HTTPException(status_code=404, detail="Transfer not found")
         
-        # Get room participants for both rooms
         from_participants = room_manager.room_participants.get(transfer_info.from_room, [])
         to_participants = room_manager.room_participants.get(transfer_info.to_room, [])
         
@@ -245,17 +273,56 @@ async def debug_transfer(transfer_id: str):
         logger.error(f"Error debugging transfer: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/transfer/debug/active")
+async def get_active_transfers():
+    """Get all active transfers"""
+    try:
+        if not transfer_service:
+            logger.warning("Transfer service not available, returning empty transfers")
+            return {"transfers": []}
+        
+        active_transfers = await transfer_service.list_active_transfers()
+        return {"transfers": list(active_transfers.values())}
+    except Exception as e:
+        logger.error(f"Error getting active transfers: {e}")
+        return {"transfers": []}
+
+@app.get("/api/rooms/{room_name}/state")
+async def get_room_state(room_name: str):
+    """Get room state for persistence"""
+    try:
+        if not room_manager:
+            raise HTTPException(status_code=501, detail="Room manager not available")
+        
+        room_state = room_manager.get_room_state(room_name)
+        return room_state
+    except Exception as e:
+        logger.error(f"Error getting room state: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/rooms/{room_name}/restore")
+async def restore_room_state(room_name: str, state: dict):
+    """Restore room state after page refresh"""
+    try:
+        if not room_manager:
+            raise HTTPException(status_code=501, detail="Room manager not available")
+        
+        room_manager.restore_room_state(room_name, state)
+        return {"status": "restored", "room_name": room_name}
+    except Exception as e:
+        logger.error(f"Error restoring room state: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.websocket("/ws/{room_name}")
 async def websocket_endpoint(websocket: WebSocket, room_name: str):
     """WebSocket endpoint for real-time room updates"""
-    await manager.connect(websocket)
+    await manager.connect(websocket, room_name)
     try:
         while True:
             data = await websocket.receive_text()
-            # Handle real-time updates
-            await manager.broadcast(f"Room {room_name}: {data}")
+            await manager.broadcast_to_room(f"Room {room_name}: {data}", room_name)
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, room_name)
 
 @app.get("/")
 async def health_check():

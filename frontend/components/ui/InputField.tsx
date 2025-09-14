@@ -9,6 +9,7 @@ interface InputFieldProps {
     isTextarea?: boolean;
     value: string;
     onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+    onFocus?: () => void;
     required?: boolean;
     name: string;
 }
@@ -20,6 +21,7 @@ const InputField: React.FC<InputFieldProps> = ({
     isTextarea = false,
     value,
     onChange,
+    onFocus,
     required = false,
     name
 }) => {
@@ -47,6 +49,7 @@ const InputField: React.FC<InputFieldProps> = ({
                     name={name}
                     value={value}
                     onChange={onChange}
+                    onFocus={onFocus}
                     placeholder={placeholder}
                     required={required}
                     className={`${commonClasses} h-[120px] py-3 resize-none`}
@@ -58,6 +61,7 @@ const InputField: React.FC<InputFieldProps> = ({
                     name={name}
                     value={value}
                     onChange={onChange}
+                    onFocus={onFocus}
                     placeholder={placeholder}
                     required={required}
                     className={`${commonClasses} h-[50px]`}

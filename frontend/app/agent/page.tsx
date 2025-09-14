@@ -94,20 +94,36 @@ export default function AgentPage() {
   }, [])
 
   const filteredAgents = availableAgents.filter(agent =>
-    agent.toLowerCase().includes(transferToAgent.toLowerCase()) &&
-    agent !== participantName
+    transferToAgent.length === 0 || agent.toLowerCase().includes(transferToAgent.toLowerCase())
   )
 
   const handleAgentInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const value = e.target.value
     setTransferToAgent(value)
-    setShowAgentSuggestions(value.length > 0)
+    setShowAgentSuggestions(true)
+  }
+
+  const handleAgentInputFocus = () => {
+    setShowAgentSuggestions(true)
   }
 
   const selectAgent = (agentName: string) => {
     setTransferToAgent(agentName)
     setShowAgentSuggestions(false)
   }
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest('.agent-suggestions-container')) {
+        setShowAgentSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const connectToRoom = async () => {
     try {
@@ -576,7 +592,7 @@ export default function AgentPage() {
                 </div>
 
                 {transferType === 'agent' ? (
-                  <div className="relative">
+                  <div className="relative agent-suggestions-container">
                     <InputField
                       label="Transfer to Agent"
                       name="transferToAgent"
@@ -584,18 +600,19 @@ export default function AgentPage() {
                       placeholder="Enter agent name"
                       value={transferToAgent}
                       onChange={handleAgentInputChange}
+                      onFocus={handleAgentInputFocus}
                       required
                     />
 
                     {/* Autocomplete Suggestions */}
                     {showAgentSuggestions && filteredAgents.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      <div className="absolute z-10 w-full mt-1 bg-zinc-900/90 rounded-[10px] shadow-lg max-h-48 overflow-y-auto">
                         {filteredAgents.map((agent) => (
                           <button
                             key={agent}
                             type="button"
                             onClick={() => selectAgent(agent)}
-                            className="w-full px-3 py-2 text-left text-white hover:bg-zinc-700 focus:bg-zinc-700 focus:outline-none first:rounded-t-lg last:rounded-b-lg"
+                            className="w-full p-[15px] px-4 text-left text-white/90 hover:bg-white/5 focus:bg-white/5 focus:outline-none first:rounded-t-[10px] last:rounded-b-[10px] transition-colors h-[50px] flex items-center"
                           >
                             <div className="flex items-center space-x-2">
                               <Users className="w-4 h-4 text-blue-400" />
@@ -608,8 +625,8 @@ export default function AgentPage() {
 
                     {/* No suggestions message */}
                     {showAgentSuggestions && filteredAgents.length === 0 && transferToAgent.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg p-3">
-                        <div className="flex items-center space-x-2 text-zinc-400">
+                      <div className="absolute z-10 w-full mt-1 bg-zinc-900/90 rounded-[10px] shadow-lg p-[15px] px-4 h-[50px] flex items-center">
+                        <div className="flex items-center space-x-2 text-[#787878]">
                           <Users className="w-4 h-4" />
                           <span>No agents found matching "{transferToAgent}"</span>
                         </div>

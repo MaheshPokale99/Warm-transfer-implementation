@@ -75,12 +75,18 @@ export default function AgentBPage() {
   useEffect(() => {
     const fetchAvailableAgents = async () => {
       try {
+        console.log('Fetching available agents...')
         const response = await api.get('/api/agents/available')
+        console.log('Available agents response:', response.data)
         if (response.data && response.data.agents) {
+          console.log('Setting available agents:', response.data.agents)
           setAvailableAgents(response.data.agents)
+        } else {
+          console.log('No agents in response, using defaults')
+          setAvailableAgents(['Agent A', 'Agent B', 'Agent C', 'Agent D'])
         }
       } catch (error) {
-        console.log('Could not fetch available agents, using defaults')
+        console.log('Could not fetch available agents, using defaults:', error)
         setAvailableAgents(['Agent A', 'Agent B', 'Agent C', 'Agent D'])
       }
     }
@@ -88,21 +94,82 @@ export default function AgentBPage() {
     fetchAvailableAgents()
   }, [])
 
+  // Poll for transfer information when connected
+  useEffect(() => {
+    if (!isConnected || !currentRoomName) return
+
+    const pollForTransfers = async () => {
+      try {
+        // Check if there are any active transfers to this room
+        const response = await api.get('/api/transfer/debug/active')
+        if (response.data && response.data.transfers) {
+          const transferToThisRoom = response.data.transfers.find((t: any) => 
+            t.to_room === currentRoomName && t.status === 'in_progress'
+          )
+          
+          if (transferToThisRoom && !transferInfo) {
+            setTransferInfo(transferToThisRoom)
+            success('Transfer Received', `Warm transfer from ${transferToThisRoom.from_agent} received`)
+            
+            setNotifications(prev => [...prev, {
+              id: `transfer-received-${Date.now()}`,
+              type: 'transfer' as const,
+              title: 'Transfer Received',
+              message: `Warm transfer from ${transferToThisRoom.from_agent} for caller ${transferToThisRoom.caller_name}`,
+              timestamp: 'Just now',
+              unread: true
+            }])
+          }
+        }
+      } catch (error) {
+        console.log('Error polling for transfers:', error)
+      }
+    }
+
+    // Poll every 2 seconds
+    const interval = setInterval(pollForTransfers, 2000)
+    return () => clearInterval(interval)
+  }, [isConnected, currentRoomName, transferInfo])
+
   const filteredAgents = availableAgents.filter(agent => 
-    agent.toLowerCase().includes(transferToAgent.toLowerCase()) && 
-    agent !== participantName 
+    transferToAgent.length === 0 || agent.toLowerCase().includes(transferToAgent.toLowerCase())
   )
+
+  // Debug logging
+  useEffect(() => {
+    console.log('Available agents:', availableAgents)
+    console.log('Transfer to agent:', transferToAgent)
+    console.log('Filtered agents:', filteredAgents)
+  }, [availableAgents, transferToAgent, filteredAgents])
 
   const handleAgentInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const value = e.target.value
     setTransferToAgent(value)
-    setShowAgentSuggestions(value.length > 0)
+    // Show suggestions as soon as user starts typing or when field is focused
+    setShowAgentSuggestions(true)
+  }
+
+  const handleAgentInputFocus = () => {
+    setShowAgentSuggestions(true)
   }
 
   const selectAgent = (agentName: string) => {
     setTransferToAgent(agentName)
     setShowAgentSuggestions(false)
   }
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest('.agent-suggestions-container')) {
+        setShowAgentSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const initiateTransfer = async () => {
     if (transferType === 'agent' && !transferToAgent.trim()) {
@@ -444,7 +511,7 @@ export default function AgentBPage() {
                       <h3 className="text-lg font-semibold text-white">Transfer Caller</h3>
                       
                       <div className="space-y-3">
-                        <div className="relative">
+                        <div className="relative agent-suggestions-container">
                           <InputField
                             label="Transfer to Agent"
                             name="transferToAgent"
@@ -452,18 +519,19 @@ export default function AgentBPage() {
                             placeholder="Enter agent name"
                             value={transferToAgent}
                             onChange={handleAgentInputChange}
+                            onFocus={handleAgentInputFocus}
                             required
                           />
                           
                           {/* Autocomplete Suggestions */}
                           {showAgentSuggestions && filteredAgents.length > 0 && (
-                            <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            <div className="absolute z-10 w-full mt-1 bg-zinc-900/90 rounded-[10px] shadow-lg max-h-48 overflow-y-auto">
                               {filteredAgents.map((agent) => (
                                 <button
                                   key={agent}
                                   type="button"
                                   onClick={() => selectAgent(agent)}
-                                  className="w-full px-3 py-2 text-left text-white hover:bg-zinc-700 focus:bg-zinc-700 focus:outline-none first:rounded-t-lg last:rounded-b-lg"
+                                  className="w-full p-[15px] px-4 text-left text-white/90 hover:bg-white/5 focus:bg-white/5 focus:outline-none first:rounded-t-[10px] last:rounded-b-[10px] transition-colors h-[50px] flex items-center"
                                 >
                                   <div className="flex items-center space-x-2">
                                     <Users className="w-4 h-4 text-blue-400" />
@@ -476,8 +544,8 @@ export default function AgentBPage() {
                           
                           {/* No suggestions message */}
                           {showAgentSuggestions && filteredAgents.length === 0 && transferToAgent.length > 0 && (
-                            <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg p-3">
-                              <div className="flex items-center space-x-2 text-zinc-400">
+                            <div className="absolute z-10 w-full mt-1 bg-zinc-900/90 rounded-[10px] shadow-lg p-[15px] px-4 h-[50px] flex items-center">
+                              <div className="flex items-center space-x-2 text-[#787878]">
                                 <Users className="w-4 h-4" />
                                 <span>No agents found matching "{transferToAgent}"</span>
                               </div>

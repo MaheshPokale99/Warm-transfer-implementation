@@ -52,16 +52,22 @@ class TransferService:
             )
             
             self.active_transfers[transfer_id] = transfer_info
+            logger.info(f"Stored transfer {transfer_id} in active transfers")
+            logger.info(f"Total active transfers: {len(self.active_transfers)}")
             
             await self._setup_destination_room(to_room, to_agent)
             
-            await self._move_caller_to_destination_room(from_room, to_room, caller_name)
+            caller_token = await self._move_caller_to_destination_room(from_room, to_room, caller_name)
             
             transfer_message = await self.llm_service.generate_transfer_message(summary, to_agent)
             
             logger.info(f"Transfer {transfer_id} initiated from {from_room} to {to_room}")
             
             transfer_info.status = "in_progress"
+            
+            # Add caller token to transfer info for frontend use
+            transfer_info.caller_token = caller_token
+            transfer_info.destination_room = to_room
             
             return transfer_info
             
@@ -87,15 +93,27 @@ class TransferService:
     async def _move_caller_to_destination_room(self, from_room: str, to_room: str, caller_name: str):
         """Move the caller from source room to destination room"""
         try:
-            await self.room_manager.remove_participant(from_room, caller_name)
-            
-            await self.room_manager.join_room(to_room, caller_name, is_agent=False)
+            caller_token = self.room_manager._generate_token(caller_name, to_room, is_agent=False)
             
             conversation_history = self.room_manager.get_room_conversation_history(from_room)
             for message in conversation_history:
                 self.room_manager.add_conversation_message(to_room, message["speaker"], message["message"])
             
-            logger.info(f"Moved caller {caller_name} from {from_room} to {to_room}")
+            from models.schemas import ParticipantInfo
+            from datetime import datetime
+            participant_info = ParticipantInfo(
+                identity=caller_name,
+                name=caller_name,
+                is_agent=False,
+                joined_at=datetime.now()
+            )
+            
+            if to_room not in self.room_manager.room_participants:
+                self.room_manager.room_participants[to_room] = []
+            self.room_manager.room_participants[to_room].append(participant_info)
+            
+            
+            return caller_token
             
         except Exception as e:
             logger.error(f"Error moving caller {caller_name} from {from_room} to {to_room}: {e}")
@@ -109,7 +127,11 @@ class TransferService:
     ) -> Dict:
         """Complete the warm transfer process"""
         try:
+            logger.info(f"Attempting to complete transfer {transfer_id}")
+            logger.info(f"Active transfers: {list(self.active_transfers.keys())}")
+            
             if transfer_id not in self.active_transfers:
+                logger.error(f"Transfer {transfer_id} not found in active transfers")
                 raise ValueError(f"Transfer {transfer_id} not found")
             
             transfer_info = self.active_transfers[transfer_id]

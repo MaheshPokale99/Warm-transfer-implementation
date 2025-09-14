@@ -259,7 +259,7 @@ class RoomManager:
             return token.to_jwt()
         except Exception as e:
             logger.error(f"Failed to generate token: {e}")
-            return "mock-token"
+            raise
 
     def get_available_agents(self) -> List[str]:
         """Get list of available agents based on active agent rooms"""
@@ -274,9 +274,16 @@ class RoomManager:
                         participants = self.room_participants[room_name]
                         if participants:
                             available_agents.append(agent_name)
+                    else:
+                        available_agents.append(agent_name)
+            
+            for room_name, participants in self.room_participants.items():
+                if room_name.startswith('agent-room-') and participants:
+                    agent_name = room_name.replace('agent-room-', '').replace('-', ' ').title()
+                    if agent_name not in available_agents:
+                        available_agents.append(agent_name)
             
             available_agents = sorted(list(set(available_agents)))
-            
             if not available_agents:
                 available_agents = ['Agent A', 'Agent B', 'Agent C', 'Agent D']
             
@@ -286,3 +293,37 @@ class RoomManager:
         except Exception as e:
             logger.error(f"Error getting available agents: {e}")
             return ['Agent A', 'Agent B', 'Agent C', 'Agent D']
+
+    def get_room_state(self, room_name: str) -> Dict:
+        """Get complete room state for persistence"""
+        return {
+            "room_info": self.active_rooms.get(room_name, {}),
+            "participants": [{"name": p.name, "is_agent": p.is_agent, "joined_at": p.joined_at.isoformat()} for p in self.room_participants.get(room_name, [])],
+            "conversation_history": self.conversation_history.get(room_name, [])
+        }
+
+    def restore_room_state(self, room_name: str, state: Dict):
+        """Restore room state from persistence"""
+        try:
+            if "room_info" in state:
+                self.active_rooms[room_name] = state["room_info"]
+            
+            if "participants" in state:
+                from models.schemas import ParticipantInfo
+                participants = []
+                for p_data in state["participants"]:
+                    participant = ParticipantInfo(
+                        identity=p_data["name"],
+                        name=p_data["name"],
+                        is_agent=p_data["is_agent"],
+                        joined_at=datetime.fromisoformat(p_data["joined_at"])
+                    )
+                    participants.append(participant)
+                self.room_participants[room_name] = participants
+            
+            if "conversation_history" in state:
+                self.conversation_history[room_name] = state["conversation_history"]
+            
+            logger.info(f"Restored room state for {room_name}")
+        except Exception as e:
+            logger.error(f"Error restoring room state for {room_name}: {e}")

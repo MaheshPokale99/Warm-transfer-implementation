@@ -38,14 +38,19 @@ export default function CallerPage({ }: CallerPageProps) {
       unread: true
     }
   ])
+  const [currentRoomName, setCurrentRoomName] = useState<string>('')
+  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null)
 
   useEffect(() => {
     return () => {
       if (room) {
         room.disconnect()
       }
+      if (wsConnection) {
+        wsConnection.close()
+      }
     }
-  }, [room])
+  }, [room, wsConnection])
 
   // Fetch available agents from backend
   useEffect(() => {
@@ -63,6 +68,82 @@ export default function CallerPage({ }: CallerPageProps) {
     
     fetchAvailableAgents()
   }, [])
+
+  const handleTransferNotification = async (callerToken: string, destinationRoom: string, transferId: string) => {
+    try {
+      console.log('Received transfer notification:', { callerToken, destinationRoom, transferId })
+      
+      // Show notification to caller
+      setNotifications(prev => [...prev, {
+        id: `transfer-${transferId}`,
+        type: 'call' as const,
+        title: 'Transfer in Progress',
+        message: 'You are being transferred to another agent. Please wait...',
+        timestamp: 'Just now',
+        unread: true
+      }])
+
+      // Disconnect from current room
+      if (room) {
+        await room.disconnect()
+        setRoom(null)
+        setIsConnected(false)
+        setParticipants([])
+      }
+
+      // Connect to new room with the provided token
+      const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
+      if (!livekitUrl) {
+        throw new Error('LiveKit URL not configured')
+      }
+
+      const newRoom = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        publishDefaults: {
+          audioPreset: {
+            maxBitrate: 16000,
+            priority: 'high'
+          }
+        }
+      })
+
+      newRoom.on(RoomEvent.Connected, () => {
+        setIsConnected(true)
+        setRoom(newRoom)
+        setCurrentRoomName(destinationRoom)
+        success('Transfer Complete', 'Successfully transferred to new agent')
+        
+        const existingParticipants = Array.from(newRoom.remoteParticipants.values())
+        setParticipants(existingParticipants)
+      })
+
+      newRoom.on(RoomEvent.ParticipantConnected, (participant) => {
+        setParticipants(prev => [...prev, participant])
+        setNotifications(prev => [...prev, {
+          id: `new-agent-${Date.now()}`,
+          type: 'call' as const,
+          title: 'New Agent Connected',
+          message: `${participant.name || participant.identity} has joined the call`,
+          timestamp: 'Just now',
+          unread: true
+        }])
+      })
+
+      newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        if (track.kind === Track.Kind.Audio) {
+          const audioElement = track.attach()
+          audioElement.play()
+        }
+      })
+
+      await newRoom.connect(livekitUrl, callerToken)
+      
+    } catch (error) {
+      console.error('Error handling transfer notification:', error)
+      error('Transfer Failed', 'Failed to complete transfer to new agent')
+    }
+  }
 
   const connectToRoom = async () => {
     try {
@@ -94,6 +175,7 @@ export default function CallerPage({ }: CallerPageProps) {
         setIsConnected(true)
         setIsConnecting(false)
         success('Connected', 'Successfully connected to caller room')
+        setCurrentRoomName(roomName)
         
         // Add existing participants to the list
         const existingParticipants = Array.from(newRoom.remoteParticipants.values())
@@ -110,6 +192,28 @@ export default function CallerPage({ }: CallerPageProps) {
             unread: true
           }])
         })
+
+        // Connect to WebSocket for transfer notifications
+        const wsUrl = `ws://localhost:8000/ws/${roomName}`
+        const ws = new WebSocket(wsUrl)
+        
+        ws.onopen = () => {
+          console.log('WebSocket connected for transfer notifications')
+        }
+        
+        ws.onmessage = (event) => {
+          const message = event.data
+          if (message.startsWith('TRANSFER_NOTIFICATION:')) {
+            const [, callerToken, destinationRoom, transferId] = message.split(':')
+            handleTransferNotification(callerToken, destinationRoom, transferId)
+          }
+        }
+        
+        ws.onclose = () => {
+          console.log('WebSocket disconnected')
+        }
+        
+        setWsConnection(ws)
       })
 
       newRoom.on(RoomEvent.Disconnected, () => {
