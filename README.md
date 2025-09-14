@@ -337,3 +337,25 @@ Enable debug mode by setting `DEBUG=True` in your `.env` file for detailed loggi
 - **Room Isolation**: Secure room access controls
 - **API Key Management**: Environment-based configuration
 - **CORS Protection**: Configured for production use
+
+## 🚀 Deployment
+
+### Production Considerations
+
+1. **Environment Variables**: Use secure secret management
+2. **HTTPS**: Enable SSL/TLS for all connections
+3. **Load Balancing**: Scale backend services as needed
+4. **Monitoring**: Implement logging and error tracking
+5. **Database**: Consider persistent storage for production
+
+### Docker Deployment (Optional)
+
+```dockerfile
+# Backend Dockerfile
+FROM python:3.9-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["python", "main.py"]
+```
