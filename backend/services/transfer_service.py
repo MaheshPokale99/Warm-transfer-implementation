@@ -65,9 +65,9 @@ class TransferService:
             
             transfer_info.status = "in_progress"
             
-            # Add caller token to transfer info for frontend use
             transfer_info.caller_token = caller_token
             transfer_info.destination_room = to_room
+            transfer_info.transfer_message = transfer_message
             
             return transfer_info
             

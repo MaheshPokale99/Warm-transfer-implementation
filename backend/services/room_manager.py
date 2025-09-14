@@ -284,15 +284,13 @@ class RoomManager:
                         available_agents.append(agent_name)
             
             available_agents = sorted(list(set(available_agents)))
-            if not available_agents:
-                available_agents = ['Agent A', 'Agent B', 'Agent C', 'Agent D']
             
             logger.info(f"Available agents: {available_agents}")
             return available_agents
             
         except Exception as e:
             logger.error(f"Error getting available agents: {e}")
-            return ['Agent A', 'Agent B', 'Agent C', 'Agent D']
+            return []
 
     def get_room_state(self, room_name: str) -> Dict:
         """Get complete room state for persistence"""

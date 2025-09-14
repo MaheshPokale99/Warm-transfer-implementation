@@ -45,10 +45,12 @@ export default function AgentPage() {
   const [transferType, setTransferType] = useState<'agent' | 'phone'>('agent')
   const [isTransferring, setIsTransferring] = useState(false)
   const [availableAgents, setAvailableAgents] = useState<string[]>([])
+
   const [showAgentSuggestions, setShowAgentSuggestions] = useState(false)
   const [conversationHistory, setConversationHistory] = useState<Array<{ speaker: string, message: string, timestamp: string }>>([])
   const [currentRoomName, setCurrentRoomName] = useState<string>('')
   const [isPlayingSummary, setIsPlayingSummary] = useState(false)
+  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null)
   const [notifications, setNotifications] = useState([
     {
       id: '1',
@@ -73,20 +75,23 @@ export default function AgentPage() {
       if (room) {
         room.disconnect()
       }
+      if (wsConnection) {
+        wsConnection.close()
+      }
     }
-  }, [room])
+  }, [room, wsConnection])
 
-  // Fetch available agents from backend
   useEffect(() => {
     const fetchAvailableAgents = async () => {
       try {
         const response = await api.get('/api/agents/available')
         if (response.data && response.data.agents) {
           setAvailableAgents(response.data.agents)
+        } else {
+          setAvailableAgents([])
         }
       } catch (error) {
-        console.log('Could not fetch available agents, using defaults')
-        setAvailableAgents(['Agent A', 'Agent B', 'Agent C', 'Agent D'])
+        setAvailableAgents([])
       }
     }
 
@@ -112,7 +117,6 @@ export default function AgentPage() {
     setShowAgentSuggestions(false)
   }
 
-  // Close suggestions when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement
@@ -170,6 +174,26 @@ export default function AgentPage() {
             unread: true
           }])
         })
+
+        const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/ws/${roomName}`
+        const ws = new WebSocket(wsUrl)
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ type: 'TEST_CONNECTION', message: 'Agent A connected' }))
+        }
+
+        ws.onmessage = (event) => {
+          const message = event.data
+        }
+
+        ws.onclose = () => {
+        }
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error)
+        }
+
+        setWsConnection(ws)
       })
 
       newRoom.on(RoomEvent.Disconnected, () => {
@@ -368,12 +392,10 @@ export default function AgentPage() {
 
       if (response.data.audio) {
         try {
-          // Try to decode as fallback data first
           const decodedData = atob(response.data.audio)
           const fallbackData = JSON.parse(decodedData)
 
           if (fallbackData.type === 'fallback') {
-            // Use browser's built-in speech synthesis as fallback
             const utterance = new SpeechSynthesisUtterance(fallbackData.text)
             utterance.onend = () => setIsPlayingSummary(false)
             utterance.onerror = () => {
@@ -382,13 +404,11 @@ export default function AgentPage() {
             }
             speechSynthesis.speak(utterance)
 
-            // Show notification about fallback mode
             warning('TTS Fallback', 'Using browser speech synthesis. OpenAI TTS quota exceeded.')
           } else {
             throw new Error('Not fallback data')
           }
         } catch (parseError) {
-          // If parsing fails, treat as regular audio data
           const audio = new Audio(`data:audio/mp3;base64,${response.data.audio}`)
           audio.onended = () => setIsPlayingSummary(false)
           audio.onerror = () => {
@@ -454,7 +474,6 @@ export default function AgentPage() {
               <NotificationPanel
                 notifications={notifications}
                 onNotificationClick={(notification) => {
-                  console.log('Notification clicked:', notification);
                 }}
                 onMarkAllRead={() => {
                   setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
@@ -629,6 +648,16 @@ export default function AgentPage() {
                         <div className="flex items-center space-x-2 text-[#787878]">
                           <Users className="w-4 h-4" />
                           <span>No agents found matching "{transferToAgent}"</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No agents available message */}
+                    {showAgentSuggestions && availableAgents.length === 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-zinc-900/90 rounded-[10px] shadow-lg p-[15px] px-4 h-[50px] flex items-center">
+                        <div className="flex items-center space-x-2 text-[#787878]">
+                          <Users className="w-4 h-4" />
+                          <span>No agents available. Connect other agents first.</span>
                         </div>
                       </div>
                     )}

@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Phone, Users } from 'lucide-react'
-import { Room, RoomEvent, RemoteParticipant, Track } from 'livekit-client'
+import { Room, RoomEvent, RemoteParticipant, Track, ConnectionState } from 'livekit-client'
 import api from '../../lib/axios'
 import MainButton from '../../components/ui/MainButton'
 import IOKnob from '../../components/ui/IOKnob'
@@ -22,12 +22,13 @@ export default function CallerPage({ }: CallerPageProps) {
 
   const [room, setRoom] = useState<Room | null>(null)
   const [isConnected, setIsConnected] = useState(false)
+  const [transferInProgress, setTransferInProgress] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [isDeafened, setIsDeafened] = useState(false)
   const [participants, setParticipants] = useState<RemoteParticipant[]>([])
-  const [selectedAgent, setSelectedAgent] = useState('Agent A')
-  const [availableAgents, setAvailableAgents] = useState<string[]>(['Agent A', 'Agent B'])
+  const [selectedAgent, setSelectedAgent] = useState('')
+  const [availableAgents, setAvailableAgents] = useState<string[]>([])
   const [notifications, setNotifications] = useState([
     {
       id: '1',
@@ -38,42 +39,57 @@ export default function CallerPage({ }: CallerPageProps) {
       unread: true
     }
   ])
-  const [currentRoomName, setCurrentRoomName] = useState<string>('')
   const [wsConnection, setWsConnection] = useState<WebSocket | null>(null)
+  const currentRoomRef = useRef<Room | null>(null)
+  const isTransferringRef = useRef(false)
+  const oldRoomRef = useRef<Room | null>(null)
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (room) {
+      if (room && room.state !== 'disconnected') {
         room.disconnect()
       }
-      if (wsConnection) {
+      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
         wsConnection.close()
       }
     }
   }, [room, wsConnection])
 
-  // Fetch available agents from backend
+  // Fetch available agents
   useEffect(() => {
     const fetchAvailableAgents = async () => {
       try {
         const response = await api.get('/api/agents/available')
         if (response.data && response.data.agents) {
           setAvailableAgents(response.data.agents)
+          if (!selectedAgent && response.data.agents.length > 0) {
+            setSelectedAgent(response.data.agents[0])
+          }
+        } else {
+          setAvailableAgents([])
         }
       } catch (error) {
-        console.log('Could not fetch available agents, using defaults')
-        // Keep default agents if API fails
+        setAvailableAgents([])
       }
     }
-    
+
     fetchAvailableAgents()
-  }, [])
+  }, [selectedAgent])
 
   const handleTransferNotification = async (callerToken: string, destinationRoom: string, transferId: string) => {
     try {
-      console.log('Received transfer notification:', { callerToken, destinationRoom, transferId })
-      
-      // Show notification to caller
+
+      setTransferInProgress(true)
+      isTransferringRef.current = true
+
+      if (!callerToken || !destinationRoom || !transferId) {
+        error('Transfer Failed', 'Invalid transfer notification received')
+        setTransferInProgress(false)
+        isTransferringRef.current = false
+        return
+      }
+
       setNotifications(prev => [...prev, {
         id: `transfer-${transferId}`,
         type: 'call' as const,
@@ -83,19 +99,14 @@ export default function CallerPage({ }: CallerPageProps) {
         unread: true
       }])
 
-      // Disconnect from current room
-      if (room) {
-        await room.disconnect()
-        setRoom(null)
-        setIsConnected(false)
-        setParticipants([])
-      }
-
-      // Connect to new room with the provided token
       const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
       if (!livekitUrl) {
         throw new Error('LiveKit URL not configured')
       }
+
+      const oldRoom = room
+      const oldWs = wsConnection
+      oldRoomRef.current = oldRoom
 
       const newRoom = new Room({
         adaptiveStream: true,
@@ -109,22 +120,82 @@ export default function CallerPage({ }: CallerPageProps) {
       })
 
       newRoom.on(RoomEvent.Connected, () => {
-        setIsConnected(true)
+
         setRoom(newRoom)
-        setCurrentRoomName(destinationRoom)
+        currentRoomRef.current = newRoom
+        setIsConnected(true)
+        setTransferInProgress(false)
+        isTransferringRef.current = false
+
         success('Transfer Complete', 'Successfully transferred to new agent')
-        
+
         const existingParticipants = Array.from(newRoom.remoteParticipants.values())
         setParticipants(existingParticipants)
+
+        const newWsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/ws/${destinationRoom}`
+        const newWs = new WebSocket(newWsUrl)
+
+        newWs.onopen = () => {
+          newWs.send(JSON.stringify({ type: 'CALLER_JOINED', message: 'Caller joined after transfer' }))
+        }
+
+        newWs.onmessage = (event) => {
+          const message = event.data
+          try {
+            const data = JSON.parse(message)
+            if (data.type === 'TRANSFER_NOTIFICATION') {
+              const { caller_token, destination_room, transfer_id } = data
+              handleTransferNotification(caller_token, destination_room, transfer_id)
+            }
+          } catch (error) {
+          }
+        }
+
+        newWs.onclose = () => {
+        }
+
+        newWs.onerror = (error) => {
+          console.error('New WebSocket error:', error)
+        }
+
+        setWsConnection(newWs)
+
+        setTimeout(() => {
+          if (oldRoom && oldRoom !== newRoom && oldRoom.state !== 'disconnected') {
+            oldRoom.removeAllListeners()
+            oldRoom.disconnect()
+          }
+          if (oldWs && oldWs !== newWs && oldWs.readyState === WebSocket.OPEN) {
+            oldWs.close()
+          }
+        }, 1000)
       })
 
       newRoom.on(RoomEvent.ParticipantConnected, (participant) => {
-        setParticipants(prev => [...prev, participant])
+        setParticipants(prev => {
+          const exists = prev.some(p => p.identity === participant.identity)
+          if (exists) return prev
+          return [...prev, participant]
+        })
+
         setNotifications(prev => [...prev, {
           id: `new-agent-${Date.now()}`,
           type: 'call' as const,
-          title: 'New Agent Connected',
+          title: 'Agent Connected',
           message: `${participant.name || participant.identity} has joined the call`,
+          timestamp: 'Just now',
+          unread: true
+        }])
+      })
+
+      newRoom.on(RoomEvent.ParticipantDisconnected, (participant) => {
+        setParticipants(prev => prev.filter(p => p.identity !== participant.identity))
+
+        setNotifications(prev => [...prev, {
+          id: `agent-left-${Date.now()}`,
+          type: 'call' as const,
+          title: 'Agent Disconnected',
+          message: `${participant.name || participant.identity} has left the call`,
           timestamp: 'Just now',
           unread: true
         }])
@@ -133,21 +204,53 @@ export default function CallerPage({ }: CallerPageProps) {
       newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
         if (track.kind === Track.Kind.Audio) {
           const audioElement = track.attach()
-          audioElement.play()
+          audioElement.play().catch(err => {
+            console.error('Error playing audio:', err)
+          })
+        }
+      })
+
+      newRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
+        track.detach()
+      })
+
+      newRoom.on(RoomEvent.Disconnected, () => {
+        if (currentRoomRef.current === newRoom && !isTransferringRef.current) {
+          setIsConnected(false)
+          setParticipants([])
+        }
+      })
+
+      newRoom.on(RoomEvent.ConnectionStateChanged, (state) => {
+        if (state === ConnectionState.Disconnected) {
+          error('Transfer Failed', 'Failed to connect to new agent room')
+          setTransferInProgress(false)
+          isTransferringRef.current = false
         }
       })
 
       await newRoom.connect(livekitUrl, callerToken)
-      
-    } catch (error) {
-      console.error('Error handling transfer notification:', error)
+
+    } catch (err) {
+      setTransferInProgress(false)
+      isTransferringRef.current = false
       error('Transfer Failed', 'Failed to complete transfer to new agent')
+
+      if (room && room.state === 'connected') {
+        setIsConnected(true)
+      }
     }
   }
 
   const connectToRoom = async () => {
     try {
       setIsConnecting(true)
+
+      if (!selectedAgent) {
+        error('No Agent Selected', 'Please select an agent to connect to')
+        setIsConnecting(false)
+        return
+      }
 
       const roomName = `agent-room-${selectedAgent.toLowerCase().replace(/\s+/g, '-')}`
 
@@ -159,7 +262,6 @@ export default function CallerPage({ }: CallerPageProps) {
 
       const roomData = response.data
 
-      // Connect to LiveKit room
       const newRoom = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -174,14 +276,13 @@ export default function CallerPage({ }: CallerPageProps) {
       newRoom.on(RoomEvent.Connected, () => {
         setIsConnected(true)
         setIsConnecting(false)
-        success('Connected', 'Successfully connected to caller room')
-        setCurrentRoomName(roomName)
-        
-        // Add existing participants to the list
+        setRoom(newRoom)
+        currentRoomRef.current = newRoom
+        success('Connected', 'Successfully connected to agent')
+
         const existingParticipants = Array.from(newRoom.remoteParticipants.values())
         setParticipants(existingParticipants)
-        
-        // Add notifications for existing participants
+
         existingParticipants.forEach(participant => {
           setNotifications(prev => [...prev, {
             id: `existing-${participant.identity}`,
@@ -193,36 +294,60 @@ export default function CallerPage({ }: CallerPageProps) {
           }])
         })
 
-        // Connect to WebSocket for transfer notifications
-        const wsUrl = `ws://localhost:8000/ws/${roomName}`
+        // Setup WebSocket connection
+        const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/ws/${roomName}`
         const ws = new WebSocket(wsUrl)
-        
+
         ws.onopen = () => {
-          console.log('WebSocket connected for transfer notifications')
+          ws.send(JSON.stringify({ type: 'CALLER_CONNECTED', message: 'Caller connected' }))
         }
-        
+
         ws.onmessage = (event) => {
           const message = event.data
-          if (message.startsWith('TRANSFER_NOTIFICATION:')) {
-            const [, callerToken, destinationRoom, transferId] = message.split(':')
-            handleTransferNotification(callerToken, destinationRoom, transferId)
+          try {
+            const data = JSON.parse(message)
+            if (data.type === 'TRANSFER_NOTIFICATION') {
+              const { caller_token, destination_room, transfer_id } = data
+              handleTransferNotification(caller_token, destination_room, transfer_id)
+            }
+          } catch (error) {
+            // Handle legacy format if needed
+            if (message.startsWith('TRANSFER_NOTIFICATION:')) {
+              const parts = message.split(':')
+              if (parts.length >= 4) {
+                const callerToken = parts[1]
+                const destinationRoom = parts[2]
+                const transferId = parts[3]
+                handleTransferNotification(callerToken, destinationRoom, transferId)
+              }
+            }
           }
         }
-        
+
         ws.onclose = () => {
-          console.log('WebSocket disconnected')
         }
-        
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error)
+        }
+
         setWsConnection(ws)
       })
 
       newRoom.on(RoomEvent.Disconnected, () => {
-        setIsConnected(false)
-        setIsConnecting(false)
+        if (!isTransferringRef.current && currentRoomRef.current === newRoom) {
+          setIsConnected(false)
+          setIsConnecting(false)
+          setParticipants([])
+        }
       })
 
       newRoom.on(RoomEvent.ParticipantConnected, (participant) => {
-        setParticipants(prev => [...prev, participant])
+        setParticipants(prev => {
+          const exists = prev.some(p => p.identity === participant.identity)
+          if (exists) return prev
+          return [...prev, participant]
+        })
 
         setNotifications(prev => [...prev, {
           id: `agent-${Date.now()}`,
@@ -250,22 +375,22 @@ export default function CallerPage({ }: CallerPageProps) {
       newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
         if (track.kind === Track.Kind.Audio) {
           const audioElement = track.attach()
-          audioElement.play()
+          audioElement.play().catch(err => {
+            console.error('Error playing audio:', err)
+          })
         }
       })
 
-      newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+      newRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
         track.detach()
       })
 
-      // Connect to the room
       const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
       if (!livekitUrl) {
         throw new Error('LiveKit URL not configured. Please set NEXT_PUBLIC_LIVEKIT_URL in your environment variables.')
       }
 
       await newRoom.connect(livekitUrl, roomData.token)
-      setRoom(newRoom)
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to connect to room'
@@ -278,8 +403,13 @@ export default function CallerPage({ }: CallerPageProps) {
     if (room) {
       await room.disconnect()
       setRoom(null)
+      currentRoomRef.current = null
       setIsConnected(false)
       setParticipants([])
+    }
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      wsConnection.close()
+      setWsConnection(null)
     }
   }
 
@@ -298,6 +428,14 @@ export default function CallerPage({ }: CallerPageProps) {
     if (room) {
       if (isDeafened) {
         await room.startAudio()
+      } else {
+        room.remoteParticipants.forEach(participant => {
+          participant.audioTrackPublications.forEach(publication => {
+            if (publication.track) {
+              publication.track.detach()
+            }
+          })
+        })
       }
       setIsDeafened(!isDeafened)
     }
@@ -306,18 +444,19 @@ export default function CallerPage({ }: CallerPageProps) {
   return (
     <div className="min-h-screen bg-[var(--background)] p-4">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-white">Caller Interface</h1>
               <p className="text-zinc-300 text-lg">Welcome, {participantName}</p>
+              {room && room.name && (
+                <p className="text-zinc-400 text-sm">Room: {room.name}</p>
+              )}
             </div>
             <div className="flex items-center gap-4">
               <NotificationPanel
                 notifications={notifications}
                 onNotificationClick={(notification) => {
-                  console.log('Notification clicked:', notification);
                 }}
                 onMarkAllRead={() => {
                   setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
@@ -333,30 +472,33 @@ export default function CallerPage({ }: CallerPageProps) {
           </div>
         </div>
 
-        {/* Connection Status */}
         <div className="mb-8 flex items-center justify-between p-6 bg-[#0D0D0D] border border-white/5 rounded-[20px] hover:border-white/10 transition-all duration-300" style={{ boxShadow: "inset 0px 2px 0px 0px rgba(184, 180, 180, 0.08)" }}>
           <div className="flex items-center space-x-4">
-            <div className={`w-4 h-4 rounded-full ${isConnected ? 'bg-green-500 shadow-lg shadow-green-500/50' :
+            <div className={`w-4 h-4 rounded-full ${transferInProgress ? 'bg-yellow-500 animate-pulse shadow-lg shadow-yellow-500/50' :
+              isConnected ? 'bg-green-500 shadow-lg shadow-green-500/50' :
                 isConnecting ? 'bg-yellow-500 animate-pulse shadow-lg shadow-yellow-500/50' :
                   'bg-red-500 shadow-lg shadow-red-500/50'
               }`} />
             <span className="font-semibold text-white text-lg">
-              {isConnected ? 'Connected' :
-                isConnecting ? 'Connecting...' :
-                  'Disconnected'}
+              {transferInProgress ? 'Transferring...' :
+                isConnected ? 'Connected' :
+                  isConnecting ? 'Connecting...' :
+                    'Disconnected'}
             </span>
           </div>
-
+          {transferInProgress && (
+            <div className="px-4 py-2 bg-yellow-500/20 border border-yellow-500/30 rounded-[10px]">
+              <span className="text-yellow-300 font-medium">Please wait...</span>
+            </div>
+          )}
         </div>
 
-
-        {/* Status Cards */}
         <div className="grid md:grid-cols-3 gap-6 mb-8">
           <StatusCard
             title="Connection Status"
-            value={isConnected ? "Connected" : "Disconnected"}
+            value={transferInProgress ? "Transferring..." : isConnected ? "Connected" : "Disconnected"}
             icon={Phone}
-            status={isConnected ? 'online' : 'offline'}
+            status={transferInProgress ? 'connecting' : isConnected ? 'online' : 'offline'}
             trend={isConnected ? { value: 100, isPositive: true } : undefined}
           />
           <StatusCard
@@ -367,15 +509,13 @@ export default function CallerPage({ }: CallerPageProps) {
           />
           <StatusCard
             title="Call Status"
-            value="Active"
+            value={transferInProgress ? "Transfer" : isConnected ? "Active" : "Idle"}
             icon={Phone}
-            status="online"
+            status={isConnected ? 'online' : 'offline'}
           />
         </div>
 
-        {/* Main Content */}
         <div className="grid lg:grid-cols-2 gap-8 items-start">
-          {/* Call Controls */}
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-white">Call Controls</h2>
 
@@ -388,10 +528,15 @@ export default function CallerPage({ }: CallerPageProps) {
                       value={selectedAgent}
                       onChange={(e) => setSelectedAgent(e.target.value)}
                       className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      disabled={availableAgents.length === 0 || isConnecting}
                     >
-                      {availableAgents.map((agent) => (
-                        <option key={agent} value={agent}>{agent}</option>
-                      ))}
+                      {availableAgents.length === 0 ? (
+                        <option value="">No agents available</option>
+                      ) : (
+                        availableAgents.map((agent) => (
+                          <option key={agent} value={agent}>{agent}</option>
+                        ))
+                      )}
                     </select>
                   </div>
                   <MainButton
@@ -399,6 +544,7 @@ export default function CallerPage({ }: CallerPageProps) {
                     variant="dark"
                     size="md"
                     onClick={connectToRoom}
+                    disabled={availableAgents.length === 0 || isConnecting || !selectedAgent}
                   />
                 </>
               ) : (
@@ -408,6 +554,7 @@ export default function CallerPage({ }: CallerPageProps) {
                     variant="dark"
                     size="md"
                     onClick={disconnectFromRoom}
+                    disabled={transferInProgress}
                   />
 
                   <div className="grid grid-cols-2 gap-3">
@@ -418,6 +565,7 @@ export default function CallerPage({ }: CallerPageProps) {
                       colorOn="#ef4444"
                       colorOff="#6b7280"
                       size={40}
+                      disabled={transferInProgress}
                     />
                     <IOKnob
                       value={isDeafened}
@@ -426,6 +574,7 @@ export default function CallerPage({ }: CallerPageProps) {
                       colorOn="#ef4444"
                       colorOff="#6b7280"
                       size={40}
+                      disabled={transferInProgress}
                     />
                   </div>
                 </div>
@@ -433,7 +582,6 @@ export default function CallerPage({ }: CallerPageProps) {
             </div>
           </div>
 
-          {/* Participants */}
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-white flex items-center">
               <Users className="w-5 h-5 mr-2" />
@@ -441,7 +589,6 @@ export default function CallerPage({ }: CallerPageProps) {
             </h2>
 
             <div className="space-y-4">
-              {/* Local Participant */}
               <ParticipantCard
                 name={`${participantName} (You)`}
                 role="caller"
@@ -452,7 +599,6 @@ export default function CallerPage({ }: CallerPageProps) {
                 onDeafen={toggleDeafen}
               />
 
-              {/* Remote Participants */}
               {participants.map((participant) => (
                 <ParticipantCard
                   key={participant.identity}
@@ -463,16 +609,22 @@ export default function CallerPage({ }: CallerPageProps) {
                 />
               ))}
 
-              {participants.length === 0 && isConnected && (
+              {participants.length === 0 && isConnected && !transferInProgress && (
                 <div className="text-center py-8 text-zinc-400">
                   <Users size={48} className="mx-auto mb-4 opacity-50" />
                   <p>Waiting for an agent to join...</p>
                 </div>
               )}
+
+              {transferInProgress && (
+                <div className="text-center py-8 text-yellow-400">
+                  <div className="animate-spin w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <p>Transferring to new agent...</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
-
       </div>
     </div>
   )

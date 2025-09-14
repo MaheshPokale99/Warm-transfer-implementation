@@ -1,5 +1,9 @@
 # Warm Transfer Implementation with LiveKit and LLMs
 
+## 🎥 Demo Video
+
+**Watch the complete warm transfer workflow in action:** [Loom Demo Video](https://www.loom.com/share/aca4c644da3d4f2382f03e1857e9d274)
+
 A complete warm transfer system that enables seamless call handoffs between agents with AI-generated call summaries using LiveKit for real-time communication and OpenAI for intelligent context generation. This implementation fulfills all requirements of the warm transfer assignment.
 
 ## 🎯 Assignment Requirements Fulfilled
@@ -12,7 +16,9 @@ A complete warm transfer system that enables seamless call handoffs between agen
 ✅ **Optional Twilio integration for phone transfers**  
 ✅ **Interactive Next.js UI for all participants**  
 ✅ **Complete backend in Python with LiveKit Server SDK**  
-✅ **Integration with OpenAI for call summaries and speech generation**
+✅ **Integration with OpenAI for call summaries and speech generation**  
+✅ **Real-time WebSocket notifications for transfer events**  
+✅ **Agent availability tracking and management**
 
 ## 🚀 Features
 
@@ -22,19 +28,26 @@ A complete warm transfer system that enables seamless call handoffs between agen
 - **Interactive Web UI**: Modern Next.js interface for agents and callers
 - **Optional Twilio Integration**: Support for phone number transfers
 - **Real-time Notifications**: Live updates on call status and transfers
+- **Agent Availability Tracking**: Dynamic agent discovery and management
+- **WebSocket Communication**: Real-time event notifications for seamless transfers
+- **Debug and Monitoring**: Comprehensive logging and health check endpoints
 
 ## 🏗️ Architecture
 
 ### Backend (Python/FastAPI)
 - **Room Management**: LiveKit room creation and participant tracking
-- **Transfer Service**: Handles warm transfer workflow
-- **LLM Service**: OpenAI integration for call summaries
+- **Transfer Service**: Handles warm transfer workflow and state management
+- **LLM Service**: OpenAI integration for call summaries and speech generation
 - **Twilio Service**: Optional phone number integration
+- **WebSocket Manager**: Real-time communication for transfer notifications
+- **Agent Tracking**: Dynamic agent availability and room management
 
 ### Frontend (Next.js/React)
-- **Agent Interface**: Complete agent dashboard with transfer controls
-- **Caller Interface**: Simple caller interface for joining calls
+- **Agent Interface**: Complete agent dashboard with transfer controls and autocomplete
+- **Agent B Interface**: Dedicated transfer receiver interface
+- **Caller Interface**: Simple caller interface with agent selection
 - **Real-time Updates**: WebSocket connections for live status updates
+- **Modern UI Components**: Custom components with Tailwind CSS styling
 
 ## 📋 Prerequisites
 
@@ -70,15 +83,18 @@ cp env.example .env
 
 Edit `.env` with your credentials:
 ```env
-# LiveKit Configuration
+# LiveKit Configuration - REQUIRED FOR PRODUCTION
+# Get these from https://cloud.livekit.io/ or your LiveKit server
 LIVEKIT_URL=wss://your-livekit-server.com
-LIVEKIT_API_KEY=your-api-key
-LIVEKIT_API_SECRET=your-api-secret
+LIVEKIT_API_KEY=your-livekit-api-key
+LIVEKIT_API_SECRET=your-livekit-api-secret
 
-# OpenAI Configuration
-OPENAI_API_KEY=your-openai-key
+# OpenAI Configuration - REQUIRED FOR AI SUMMARIES
+# Get from https://platform.openai.com/api-keys
+OPENAI_API_KEY=your-openai-api-key
 
-# Twilio Configuration (optional)
+# Twilio Configuration - OPTIONAL FOR PHONE TRANSFERS
+# Get from https://console.twilio.com/
 TWILIO_ACCOUNT_SID=your-twilio-account-sid
 TWILIO_AUTH_TOKEN=your-twilio-auth-token
 TWILIO_PHONE_NUMBER=your-twilio-phone-number
@@ -87,7 +103,7 @@ TWILIO_PHONE_NUMBER=your-twilio-phone-number
 HOST=0.0.0.0
 PORT=8000
 LOG_LEVEL=INFO
-DEBUG=True
+DEBUG=False
 ```
 
 #### Start Backend Server
@@ -107,13 +123,16 @@ npm install
 
 #### Environment Configuration
 ```bash
-cp env.local.example .env.local
+cp env.local.template .env.local
 ```
 
 Edit `.env.local`:
 ```env
-NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-server.com
+# Backend API URL
 NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# LiveKit WebSocket URL
+NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-server.com
 ```
 
 #### Start Frontend Development Server
@@ -188,34 +207,60 @@ The frontend will be available at `http://localhost:3000`
 ### Agent Interface (`/agent`)
 - **Connection Controls**: Start/end agent sessions
 - **Transfer Controls**: Initiate warm transfers to other agents or phone numbers
+- **Agent Autocomplete**: Smart agent selection with real-time suggestions
 - **Participant Management**: View active callers and their status
 - **Call History**: Track conversation and transfer history
 - **Real-time Notifications**: Live updates on call events
+- **Summary Playback**: Play AI-generated summaries to Agent B
+
+### Agent B Interface (`/agent-b`)
+- **Transfer Receiver**: Dedicated interface for receiving warm transfers
+- **Call Controls**: Mute/unmute and basic call management
+- **Transfer Information**: View incoming transfer details and summaries
+- **Participant Management**: See transferred callers
+- **Real-time Notifications**: Live updates on transfer events
 
 ### Caller Interface (`/caller`)
-- **Simple Connection**: Easy one-click connection to agents
+- **Agent Selection**: Choose from available agents with dropdown
+- **Simple Connection**: Easy one-click connection to selected agent
 - **Call Controls**: Mute/unmute and basic call management
 - **Participant View**: See connected agents
-- **Status Updates**: Real-time connection status
+- **Status Updates**: Real-time connection status and transfer progress
+- **Automatic Transfers**: Seamless movement between agents during transfers
 
 ## 🔌 API Endpoints
 
+### Authentication & Tokens
+- `POST /api/token/generate` - Generate LiveKit JWT tokens for room access
+
 ### Room Management
 - `POST /api/rooms/create` - Create a new LiveKit room
-- `GET /api/rooms/{room_name}` - Get room information
+- `GET /api/rooms/{room_name}/state` - Get room state and participants
+- `POST /api/rooms/{room_name}/restore` - Restore room state
 
 ### Transfer Management
-- `POST /api/transfer/initiate` - Initiate a warm transfer
-- `POST /api/transfer/complete` - Complete a transfer
-- `GET /api/transfer/{transfer_id}` - Get transfer status
+- `POST /api/transfer/initiate` - Initiate a warm transfer between agents
+- `POST /api/transfer/complete` - Complete a transfer and clean up
+- `GET /api/transfer/debug/{transfer_id}` - Debug specific transfer status
+- `GET /api/transfer/debug/active` - Get all active transfers
+
+### Agent Management
+- `GET /api/agents/available` - Get list of available agents
 
 ### AI Services
-- `POST /api/summary/generate` - Generate call summary
-- `POST /api/speech/generate` - Generate speech from text
+- `POST /api/summary/generate` - Generate call summary using OpenAI
+- `POST /api/speech/generate` - Generate speech from text using OpenAI TTS
 
 ### Twilio Integration (Optional)
-- `POST /api/twilio/dial` - Dial a phone number
-- `GET /api/twilio/calls` - List active calls
+- `POST /api/twilio/dial` - Dial a phone number and connect to room
+
+### WebSocket
+- `WS /ws/{room_name}` - Real-time WebSocket connection for room events
+
+### Health & Debug
+- `GET /` - Basic health check
+- `GET /api/health` - Detailed health check with service status
+- `GET /api/debug/connections` - Debug active WebSocket connections
 
 ## 🧪 Testing the Complete Warm Transfer Flow
 
@@ -234,9 +279,9 @@ npm run dev
 
 #### Step 1: Setup All Participants
 1. **Open 3 browser windows/tabs**
-2. **Agent A**: Go to `http://localhost:3000` → Enter "Agent A" → Click "Join as Agent A"
-3. **Agent B**: Go to `http://localhost:3000` → Enter "Agent B" → Click "Join as Agent B"  
-4. **Caller**: Go to `http://localhost:3000` → Enter "John Doe" → Click "Join as Caller"
+2. **Agent A**: Go to `http://localhost:3000/agent?name=Agent%20A`
+3. **Agent B**: Go to `http://localhost:3000/agent-b?name=Agent%20B`  
+4. **Caller**: Go to `http://localhost:3000/caller?name=John%20Doe`
 
 #### Step 2: Initial Connection
 1. **Agent A**: Click "Start Agent Session" → Wait for connection
@@ -249,9 +294,9 @@ npm run dev
 3. **Conversation history** is automatically tracked
 
 #### Step 4: Initiate Warm Transfer
-1. **Agent A**: Enter "Agent B" in transfer field → Click "Initiate Agent Transfer"
+1. **Agent A**: Type "Agent B" in transfer field (autocomplete will suggest) → Click "Initiate Agent Transfer"
 2. **System generates AI summary** using OpenAI
-3. **Caller is moved** to Agent B's room
+3. **Caller is moved** to Agent B's room automatically
 4. **Transfer status** shows "Transfer in Progress"
 
 #### Step 5: Deliver Summary
@@ -272,6 +317,7 @@ npm run dev
 3. **Click "Initiate Phone Transfer"**
 4. **System dials** using Twilio
 5. **Agent A explains** summary to person who answers
+6. **Transfer completes** when Agent A exits the call
 
 ## 🎥 Demo Recording
 
@@ -313,6 +359,13 @@ To create a demo recording:
 
 Enable debug mode by setting `DEBUG=True` in your `.env` file for detailed logging.
 
+### Health Check
+
+Check system health at:
+- `http://localhost:8000/` - Basic health check
+- `http://localhost:8000/api/health` - Detailed service status
+- `http://localhost:8000/api/debug/connections` - Active WebSocket connections
+
 ## 📚 Technical Details
 
 ### Warm Transfer Workflow
@@ -328,8 +381,9 @@ Enable debug mode by setting `DEBUG=True` in your `.env` file for detailed loggi
 
 - **Model**: GPT-3.5-turbo for cost-effective summaries
 - **Prompt Engineering**: Optimized for customer service context
-- **Fallback**: Simple rule-based summary if AI fails
+- **Fallback**: Browser speech synthesis if OpenAI TTS fails
 - **Context Preservation**: Maintains conversation flow
+- **Text-to-Speech**: OpenAI TTS with fallback to browser synthesis
 
 ### Security Features
 
@@ -359,3 +413,29 @@ RUN pip install -r requirements.txt
 COPY . .
 CMD ["python", "main.py"]
 ```
+
+## 📦 Dependencies
+
+### Backend Dependencies
+- **FastAPI**: Modern web framework for building APIs
+- **LiveKit**: Real-time communication SDK
+- **OpenAI**: AI service for summaries and speech generation
+- **Twilio**: Optional phone integration
+- **Uvicorn**: ASGI server for FastAPI
+- **WebSockets**: Real-time communication
+
+### Frontend Dependencies
+- **Next.js**: React framework for production
+- **LiveKit Client**: Real-time communication client
+- **Tailwind CSS**: Utility-first CSS framework
+- **Framer Motion**: Animation library
+- **Lucide React**: Icon library
+- **Axios**: HTTP client for API calls
+
+## 🔄 Recent Updates
+
+- **Removed Debug Logs**: Cleaned up console.log statements for production
+- **Enhanced Agent Discovery**: Improved agent availability tracking
+- **WebSocket Integration**: Real-time transfer notifications
+- **UI Improvements**: Better autocomplete and user experience
+- **Health Monitoring**: Comprehensive health check endpoints

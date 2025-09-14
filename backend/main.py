@@ -90,13 +90,16 @@ class ConnectionManager:
         if room_name not in self.active_connections:
             self.active_connections[room_name] = []
         self.active_connections[room_name].append(websocket)
+        logger.info(f"WebSocket connected to room {room_name}. Total connections: {len(self.active_connections[room_name])}")
 
     def disconnect(self, websocket: WebSocket, room_name: str):
         if room_name in self.active_connections:
             try:
                 self.active_connections[room_name].remove(websocket)
+                logger.info(f"WebSocket disconnected from room {room_name}. Remaining connections: {len(self.active_connections[room_name])}")
                 if not self.active_connections[room_name]:
                     del self.active_connections[room_name]
+                    logger.info(f"Room {room_name} has no more connections, removed from active connections")
             except ValueError:
                 pass
 
@@ -172,11 +175,25 @@ async def initiate_transfer(request: TransferRequest):
             caller_name=request.caller_name
         )
         
-        # Notify caller about transfer via WebSocket
         if hasattr(transfer_info, 'caller_token') and hasattr(transfer_info, 'destination_room'):
+            logger.info(f"Sending transfer notification to room {request.from_room} for caller {request.caller_name}")
+            import json
+            transfer_data = {
+                "type": "TRANSFER_NOTIFICATION",
+                "caller_token": transfer_info.caller_token,
+                "destination_room": transfer_info.destination_room,
+                "transfer_id": transfer_info.transfer_id
+            }
             await manager.broadcast_to_room(
-                f"TRANSFER_NOTIFICATION:{transfer_info.caller_token}:{transfer_info.destination_room}:{transfer_info.transfer_id}",
+                json.dumps(transfer_data),
                 request.from_room
+            )
+            logger.info(f"Transfer notification sent successfully")
+        
+        if hasattr(transfer_info, 'transfer_message') and hasattr(transfer_info, 'summary'):
+            await manager.broadcast_to_room(
+                f"INCOMING_TRANSFER:{transfer_info.transfer_id}:{transfer_info.caller_name}:{transfer_info.summary}:{transfer_info.transfer_message}",
+                request.to_room
             )
         
         return transfer_info
@@ -282,6 +299,7 @@ async def get_active_transfers():
             return {"transfers": []}
         
         active_transfers = await transfer_service.list_active_transfers()
+        logger.info(f"Found {len(active_transfers)} active transfers")
         return {"transfers": list(active_transfers.values())}
     except Exception as e:
         logger.error(f"Error getting active transfers: {e}")
@@ -316,12 +334,15 @@ async def restore_room_state(room_name: str, state: dict):
 @app.websocket("/ws/{room_name}")
 async def websocket_endpoint(websocket: WebSocket, room_name: str):
     """WebSocket endpoint for real-time room updates"""
+    logger.info(f"WebSocket connection attempt to room: {room_name}")
     await manager.connect(websocket, room_name)
     try:
         while True:
             data = await websocket.receive_text()
+            logger.info(f"WebSocket message received in room {room_name}: {data}")
             await manager.broadcast_to_room(f"Room {room_name}: {data}", room_name)
     except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected from room: {room_name}")
         manager.disconnect(websocket, room_name)
 
 @app.get("/")
@@ -337,6 +358,17 @@ async def health_check():
             "transfer_service": transfer_service is not None,
             "twilio_service": twilio_service is not None
         }
+    }
+
+@app.get("/api/debug/connections")
+async def debug_connections():
+    """Debug endpoint to check active WebSocket connections"""
+    return {
+        "active_connections": {
+            room: len(connections) for room, connections in manager.active_connections.items()
+        },
+        "total_rooms": len(manager.active_connections),
+        "total_connections": sum(len(connections) for connections in manager.active_connections.values())
     }
 
 @app.get("/api/health")

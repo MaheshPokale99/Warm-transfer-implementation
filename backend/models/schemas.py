@@ -47,6 +47,7 @@ class TransferInfo(BaseModel):
     created_at: datetime
     caller_token: Optional[str] = None
     destination_room: Optional[str] = None
+    transfer_message: Optional[str] = None
 
 class TwilioCallRequest(BaseModel):
     phone_number: str
