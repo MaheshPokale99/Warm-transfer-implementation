@@ -40,10 +40,8 @@ class TwilioService:
     async def dial_and_connect(self, phone_number: str, room_name: str) -> Dict:
         """Dial a phone number and connect to LiveKit room"""
         try:
-            # Create TwiML for the call
             twiml_url = f"https://your-domain.com/api/twilio/connect/{room_name}"
             
-            # Make the call
             call = self.client.calls.create(
                 to=phone_number,
                 from_=self.phone_number,
@@ -51,7 +49,6 @@ class TwilioService:
                 method='POST'
             )
             
-            # Store call information
             call_info = {
                 "call_sid": call.sid,
                 "phone_number": phone_number,
@@ -79,19 +76,13 @@ class TwilioService:
         """Generate TwiML for connecting to LiveKit room"""
         response = VoiceResponse()
         
-        # Add summary if provided
         if summary:
             response.say(f"Warm transfer summary: {summary}")
             response.pause(length=1)
         
-        # Connect to LiveKit room
-        # Note: This would require LiveKit's Twilio integration
-        # For now, we'll use a placeholder
         response.say("Connecting you to the next available agent.")
         response.pause(length=2)
         
-        # In a real implementation, you would use LiveKit's Twilio connector
-        # response.dial().conference(room_name)
         
         return str(response)
 
@@ -146,8 +137,6 @@ class TwilioService:
     async def create_conference_room(self, room_name: str) -> str:
         """Create a Twilio conference room"""
         try:
-            # In a real implementation, this would create a conference room
-            # that can be connected to LiveKit
             conference_name = f"livekit_{room_name}"
             
             logger.info(f"Created conference room: {conference_name}")
@@ -160,12 +149,10 @@ class TwilioService:
     async def transfer_to_phone(self, call_sid: str, phone_number: str) -> bool:
         """Transfer an existing call to another phone number"""
         try:
-            # Create TwiML for transfer
             response = VoiceResponse()
             response.say("Please hold while I transfer you to a specialist.")
             response.dial(phone_number)
             
-            # Update the call with new TwiML
             call = self.client.calls(call_sid).update(
                 twiml=str(response)
             )
@@ -196,13 +183,12 @@ class TwilioService:
     async def get_phone_number_info(self, phone_number: str) -> Dict:
         """Get information about a phone number"""
         try:
-            # This would use Twilio's Lookup API
             # For now, return basic info
             return {
                 "phone_number": phone_number,
-                "country_code": "US",  # Placeholder
-                "carrier": "Unknown",  # Placeholder
-                "line_type": "mobile"  # Placeholder
+                "country_code": "US",
+                "carrier": "Unknown",
+                "line_type": "mobile"
             }
         except Exception as e:
             logger.error(f"Error getting phone number info for {phone_number}: {e}")
@@ -215,7 +201,7 @@ class TwilioService:
         
         for call_sid, call_info in self.active_calls.items():
             time_diff = current_time - call_info["created_at"]
-            if time_diff.total_seconds() > 3600:  # 1 hour
+            if time_diff.total_seconds() > 3600:
                 calls_to_remove.append(call_sid)
         
         for call_sid in calls_to_remove:
@@ -235,7 +221,6 @@ class TwilioService:
                 response.pause(length=1)
             
             response.say("Connecting you to the agent.")
-            # In real implementation: response.dial().conference(room_name)
             
         elif action == "hold_music":
             response.play("https://demo.twilio.com/docs/classic.mp3")

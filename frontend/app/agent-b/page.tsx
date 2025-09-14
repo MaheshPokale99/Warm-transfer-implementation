@@ -11,6 +11,7 @@ import MainButton from '../../components/ui/MainButton'
 import StatusCard from '../../components/ui/StatusCard'
 import NotificationPanel from '../../components/ui/NotificationPanel'
 import ParticipantCard from '../../components/ui/ParticipantCard'
+import InputField from '../../components/ui/InputField'
 import { useNotification } from '../../components/ui/NotificationProvider'
 
 interface TransferInfo {
@@ -40,6 +41,11 @@ export default function AgentBPage() {
   const [currentRoomName, setCurrentRoomName] = useState<string>('')
   const [transferInfo, setTransferInfo] = useState<TransferInfo | null>(null)
   const [conversationHistory, setConversationHistory] = useState<Array<{speaker: string, message: string, timestamp: string}>>([])
+  const [transferToAgent, setTransferToAgent] = useState('')
+  const [transferType, setTransferType] = useState<'agent' | 'phone'>('agent')
+  const [isTransferring, setIsTransferring] = useState(false)
+  const [availableAgents, setAvailableAgents] = useState<string[]>([])
+  const [showAgentSuggestions, setShowAgentSuggestions] = useState(false)
   const [notifications, setNotifications] = useState<Array<{
     id: string
     type: 'transfer' | 'call'
@@ -65,6 +71,94 @@ export default function AgentBPage() {
       }
     }
   }, [room])
+
+  useEffect(() => {
+    const fetchAvailableAgents = async () => {
+      try {
+        const response = await api.get('/api/agents/available')
+        if (response.data && response.data.agents) {
+          setAvailableAgents(response.data.agents)
+        }
+      } catch (error) {
+        console.log('Could not fetch available agents, using defaults')
+        setAvailableAgents(['Agent A', 'Agent B', 'Agent C', 'Agent D'])
+      }
+    }
+    
+    fetchAvailableAgents()
+  }, [])
+
+  const filteredAgents = availableAgents.filter(agent => 
+    agent.toLowerCase().includes(transferToAgent.toLowerCase()) && 
+    agent !== participantName 
+  )
+
+  const handleAgentInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setTransferToAgent(value)
+    setShowAgentSuggestions(value.length > 0)
+  }
+
+  const selectAgent = (agentName: string) => {
+    setTransferToAgent(agentName)
+    setShowAgentSuggestions(false)
+  }
+
+  const initiateTransfer = async () => {
+    if (transferType === 'agent' && !transferToAgent.trim()) {
+      warning('Invalid Input', 'Please enter an agent name to transfer to')
+      return
+    }
+
+    if (!room) {
+      warning('No Room', 'No active room found')
+      return
+    }
+
+    try {
+      setIsTransferring(true)
+
+      const caller = participants.find(p => !p.metadata || !p.metadata.includes('is_agent'))
+      if (!caller) {
+        warning('No Caller Found', 'No caller found in the room to transfer')
+        return
+      }
+
+      const toRoom = `agent-room-${transferToAgent.toLowerCase().replace(/\s+/g, '-')}`
+
+      const response = await api.post('/api/transfer/initiate', {
+        from_room: room.name,
+        to_room: toRoom,
+        from_agent: participantName,
+        to_agent: transferToAgent,
+        caller_name: caller.name || caller.identity
+      })
+
+      const transferInfo = response.data
+
+      success('Transfer Initiated', `Warm transfer to ${transferToAgent} has been initiated`)
+
+      setNotifications(prev => [...prev, {
+        id: `transfer-${Date.now()}`,
+        type: 'transfer' as const,
+        title: 'Transfer Initiated',
+        message: `Warm transfer to ${transferToAgent} has been initiated`,
+        timestamp: 'Just now',
+        unread: true
+      }])
+
+      setConversationHistory(prev => [...prev, {
+        speaker: participantName,
+        message: `Initiating warm transfer to ${transferToAgent}. Call summary: ${transferInfo.summary}`,
+        timestamp: new Date().toISOString()
+      }])
+
+    } catch (err) {
+      error('Transfer Failed', err instanceof Error ? err.message : 'Failed to initiate transfer')
+    } finally {
+      setIsTransferring(false)
+    }
+  }
 
   const connectToRoom = async () => {
     try {
@@ -343,6 +437,63 @@ export default function AgentBPage() {
                       <span className="text-xs mt-1 block">Deafen</span>
                     </button>
                   </div>
+
+                  {/* Transfer Controls */}
+                  {participants.length > 0 && (
+                    <div className="space-y-4 pt-4 border-t border-zinc-700">
+                      <h3 className="text-lg font-semibold text-white">Transfer Caller</h3>
+                      
+                      <div className="space-y-3">
+                        <div className="relative">
+                          <InputField
+                            label="Transfer to Agent"
+                            name="transferToAgent"
+                            type="text"
+                            placeholder="Enter agent name"
+                            value={transferToAgent}
+                            onChange={handleAgentInputChange}
+                            required
+                          />
+                          
+                          {/* Autocomplete Suggestions */}
+                          {showAgentSuggestions && filteredAgents.length > 0 && (
+                            <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                              {filteredAgents.map((agent) => (
+                                <button
+                                  key={agent}
+                                  type="button"
+                                  onClick={() => selectAgent(agent)}
+                                  className="w-full px-3 py-2 text-left text-white hover:bg-zinc-700 focus:bg-zinc-700 focus:outline-none first:rounded-t-lg last:rounded-b-lg"
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    <Users className="w-4 h-4 text-blue-400" />
+                                    <span>{agent}</span>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* No suggestions message */}
+                          {showAgentSuggestions && filteredAgents.length === 0 && transferToAgent.length > 0 && (
+                            <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg p-3">
+                              <div className="flex items-center space-x-2 text-zinc-400">
+                                <Users className="w-4 h-4" />
+                                <span>No agents found matching "{transferToAgent}"</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <MainButton
+                          name={isTransferring ? "Transferring..." : "Transfer to Agent"}
+                          variant="dark"
+                          size="sm"
+                          onClick={initiateTransfer}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -15,11 +15,9 @@ load_dotenv()
 try:
     from livekit import api
     LIVEKIT_AVAILABLE = True
-    print("RoomManager: LiveKit API loaded successfully")
 except ImportError:
     LIVEKIT_AVAILABLE = False
     api = None
-    print("RoomManager: LiveKit not available")
 
 from models.schemas import RoomInfo, ParticipantInfo
 
@@ -80,12 +78,10 @@ class RoomManager:
                 if "already exists" not in str(e).lower():
                     logger.warning(f"Room {room_name} might already exist: {e}")
 
-            # Generate access token
             token = api.AccessToken(self.livekit_api_key, self.livekit_api_secret)
             token.with_identity(participant_name)
             token.with_name(participant_name)
             
-            # Set up grants based on participant type
             grants = api.VideoGrants(
                 room_join=True,
                 room=room_name,
@@ -94,7 +90,6 @@ class RoomManager:
                 can_publish_data=True
             )
             
-            # Add agent-specific permissions
             if is_agent:
                 grants.room_admin = True
                 grants.can_update_own_metadata = True
@@ -102,7 +97,6 @@ class RoomManager:
             token.with_grants(grants)
             jwt_token = token.to_jwt()
 
-            # Track room and participant
             self.active_rooms[room_name] = {
                 "created_at": datetime.now(),
                 "participants": []
@@ -144,7 +138,6 @@ class RoomManager:
                 logger.error(f"Error checking room existence: {e}")
                 raise
 
-            # Generate access token
             token = api.AccessToken(self.livekit_api_key, self.livekit_api_secret)
             token.with_identity(participant_name)
             token.with_name(participant_name)
@@ -164,7 +157,6 @@ class RoomManager:
 
             jwt_token = token.to_jwt()
 
-            # Track participant
             participant_info = ParticipantInfo(
                 identity=participant_name,
                 name=participant_name,
@@ -222,7 +214,6 @@ class RoomManager:
             
             livekit_api = self._get_livekit_api()
             
-            # Remove participant from room
             await livekit_api.room.remove_participant(
                 api.RoomParticipantIdentity(
                     room=room_name,
@@ -230,7 +221,6 @@ class RoomManager:
                 )
             )
             
-            # Remove from local tracking
             if room_name in self.room_participants:
                 self.room_participants[room_name] = [
                     p for p in self.room_participants[room_name] 
@@ -249,12 +239,10 @@ class RoomManager:
             raise RuntimeError("LiveKit is not available. Please install livekit package and configure credentials.")
         
         try:
-            # Generate access token
             token = api.AccessToken(self.livekit_api_key, self.livekit_api_secret)
             token.with_identity(participant_name)
             token.with_name(participant_name)
             
-            # Set up grants based on participant type
             grants = api.VideoGrants(
                 room_join=True,
                 room=room_name,
@@ -263,7 +251,6 @@ class RoomManager:
                 can_publish_data=True
             )
             
-            # Add agent-specific permissions
             if is_agent:
                 grants.room_admin = True
                 grants.can_update_own_metadata = True
@@ -279,20 +266,23 @@ class RoomManager:
         try:
             available_agents = []
             
-            # Check all active rooms for agent rooms
             for room_name, room_info in self.active_rooms.items():
                 if room_name.startswith('agent-room-'):
-                    # Extract agent name from room name
                     agent_name = room_name.replace('agent-room-', '').replace('-', ' ').title()
-                    available_agents.append(agent_name)
+                    
+                    if room_name in self.room_participants:
+                        participants = self.room_participants[room_name]
+                        if participants:
+                            available_agents.append(agent_name)
             
-            # If no agents found, return default agents
+            available_agents = sorted(list(set(available_agents)))
+            
             if not available_agents:
-                available_agents = ['Agent A', 'Agent B']
+                available_agents = ['Agent A', 'Agent B', 'Agent C', 'Agent D']
             
             logger.info(f"Available agents: {available_agents}")
             return available_agents
             
         except Exception as e:
             logger.error(f"Error getting available agents: {e}")
-            return ['Agent A', 'Agent B']
+            return ['Agent A', 'Agent B', 'Agent C', 'Agent D']

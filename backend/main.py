@@ -214,11 +214,35 @@ async def get_available_agents():
         if not room_manager:
             raise HTTPException(status_code=501, detail="Room manager not available")
         
-        # Get all active agent rooms
         available_agents = room_manager.get_available_agents()
         return {"agents": available_agents}
     except Exception as e:
         logger.error(f"Error getting available agents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/transfer/debug/{transfer_id}")
+async def debug_transfer(transfer_id: str):
+    """Debug transfer status and details"""
+    try:
+        if not transfer_service:
+            raise HTTPException(status_code=501, detail="Transfer service not available")
+        
+        transfer_info = await transfer_service.get_transfer_status(transfer_id)
+        if not transfer_info:
+            raise HTTPException(status_code=404, detail="Transfer not found")
+        
+        # Get room participants for both rooms
+        from_participants = room_manager.room_participants.get(transfer_info.from_room, [])
+        to_participants = room_manager.room_participants.get(transfer_info.to_room, [])
+        
+        return {
+            "transfer": transfer_info,
+            "from_room_participants": [{"name": p.name, "is_agent": p.is_agent} for p in from_participants],
+            "to_room_participants": [{"name": p.name, "is_agent": p.is_agent} for p in to_participants],
+            "conversation_history": room_manager.get_room_conversation_history(transfer_info.from_room)
+        }
+    except Exception as e:
+        logger.error(f"Error debugging transfer: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/ws/{room_name}")

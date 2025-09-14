@@ -44,6 +44,8 @@ export default function AgentPage() {
   const [transferToPhone, setTransferToPhone] = useState('')
   const [transferType, setTransferType] = useState<'agent' | 'phone'>('agent')
   const [isTransferring, setIsTransferring] = useState(false)
+  const [availableAgents, setAvailableAgents] = useState<string[]>([])
+  const [showAgentSuggestions, setShowAgentSuggestions] = useState(false)
   const [conversationHistory, setConversationHistory] = useState<Array<{ speaker: string, message: string, timestamp: string }>>([])
   const [currentRoomName, setCurrentRoomName] = useState<string>('')
   const [isPlayingSummary, setIsPlayingSummary] = useState(false)
@@ -73,6 +75,39 @@ export default function AgentPage() {
       }
     }
   }, [room])
+
+  // Fetch available agents from backend
+  useEffect(() => {
+    const fetchAvailableAgents = async () => {
+      try {
+        const response = await api.get('/api/agents/available')
+        if (response.data && response.data.agents) {
+          setAvailableAgents(response.data.agents)
+        }
+      } catch (error) {
+        console.log('Could not fetch available agents, using defaults')
+        setAvailableAgents(['Agent A', 'Agent B', 'Agent C', 'Agent D'])
+      }
+    }
+
+    fetchAvailableAgents()
+  }, [])
+
+  const filteredAgents = availableAgents.filter(agent =>
+    agent.toLowerCase().includes(transferToAgent.toLowerCase()) &&
+    agent !== participantName
+  )
+
+  const handleAgentInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setTransferToAgent(value)
+    setShowAgentSuggestions(value.length > 0)
+  }
+
+  const selectAgent = (agentName: string) => {
+    setTransferToAgent(agentName)
+    setShowAgentSuggestions(false)
+  }
 
   const connectToRoom = async () => {
     try {
@@ -105,10 +140,10 @@ export default function AgentPage() {
         setIsConnected(true)
         setIsConnecting(false)
         success('Connected', 'Successfully connected to agent room')
-        
+
         const existingParticipants = Array.from(newRoom.remoteParticipants.values())
         setParticipants(existingParticipants)
-        
+
         existingParticipants.forEach(participant => {
           setNotifications(prev => [...prev, {
             id: `existing-${participant.identity}`,
@@ -316,13 +351,36 @@ export default function AgentPage() {
       })
 
       if (response.data.audio) {
-        const audio = new Audio(`data:audio/mp3;base64,${response.data.audio}`)
-        audio.onended = () => setIsPlayingSummary(false)
-        audio.onerror = () => {
-          setIsPlayingSummary(false)
-          error('Audio Error', 'Failed to play transfer summary')
+        try {
+          // Try to decode as fallback data first
+          const decodedData = atob(response.data.audio)
+          const fallbackData = JSON.parse(decodedData)
+
+          if (fallbackData.type === 'fallback') {
+            // Use browser's built-in speech synthesis as fallback
+            const utterance = new SpeechSynthesisUtterance(fallbackData.text)
+            utterance.onend = () => setIsPlayingSummary(false)
+            utterance.onerror = () => {
+              setIsPlayingSummary(false)
+              error('Speech Error', 'Failed to play transfer summary')
+            }
+            speechSynthesis.speak(utterance)
+
+            // Show notification about fallback mode
+            warning('TTS Fallback', 'Using browser speech synthesis. OpenAI TTS quota exceeded.')
+          } else {
+            throw new Error('Not fallback data')
+          }
+        } catch (parseError) {
+          // If parsing fails, treat as regular audio data
+          const audio = new Audio(`data:audio/mp3;base64,${response.data.audio}`)
+          audio.onended = () => setIsPlayingSummary(false)
+          audio.onerror = () => {
+            setIsPlayingSummary(false)
+            error('Audio Error', 'Failed to play transfer summary')
+          }
+          await audio.play()
         }
-        await audio.play()
       } else {
         setIsPlayingSummary(false)
         error('Audio Error', 'Failed to generate speech for transfer summary')
@@ -518,15 +576,46 @@ export default function AgentPage() {
                 </div>
 
                 {transferType === 'agent' ? (
-                  <InputField
-                    label="Transfer to Agent"
-                    name="transferToAgent"
-                    type="text"
-                    placeholder="Enter agent name"
-                    value={transferToAgent}
-                    onChange={(e) => setTransferToAgent(e.target.value)}
-                    required
-                  />
+                  <div className="relative">
+                    <InputField
+                      label="Transfer to Agent"
+                      name="transferToAgent"
+                      type="text"
+                      placeholder="Enter agent name"
+                      value={transferToAgent}
+                      onChange={handleAgentInputChange}
+                      required
+                    />
+
+                    {/* Autocomplete Suggestions */}
+                    {showAgentSuggestions && filteredAgents.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {filteredAgents.map((agent) => (
+                          <button
+                            key={agent}
+                            type="button"
+                            onClick={() => selectAgent(agent)}
+                            className="w-full px-3 py-2 text-left text-white hover:bg-zinc-700 focus:bg-zinc-700 focus:outline-none first:rounded-t-lg last:rounded-b-lg"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <Users className="w-4 h-4 text-blue-400" />
+                              <span>{agent}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* No suggestions message */}
+                    {showAgentSuggestions && filteredAgents.length === 0 && transferToAgent.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg p-3">
+                        <div className="flex items-center space-x-2 text-zinc-400">
+                          <Users className="w-4 h-4" />
+                          <span>No agents found matching "{transferToAgent}"</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <InputField
                     label="Transfer to Phone"

@@ -30,19 +30,15 @@ class TransferService:
     ) -> TransferInfo:
         """Initiate a warm transfer between two agents"""
         try:
-            # Generate unique transfer ID
             transfer_id = str(uuid.uuid4())
             
-            # Get conversation history from the source room
             conversation_history = self.room_manager.get_room_conversation_history(from_room)
             
-            # Generate call summary using LLM
             summary = await self.llm_service.generate_call_summary(
                 conversation_history=conversation_history,
                 context=f"Transfer from {from_agent} to {to_agent}"
             )
             
-            # Create transfer info
             transfer_info = TransferInfo(
                 transfer_id=transfer_id,
                 from_room=from_room,
@@ -55,21 +51,16 @@ class TransferService:
                 created_at=datetime.now()
             )
             
-            # Store transfer info
             self.active_transfers[transfer_id] = transfer_info
             
-            # Create or join the destination room for Agent B
             await self._setup_destination_room(to_room, to_agent)
             
-            # Move caller to the destination room
             await self._move_caller_to_destination_room(from_room, to_room, caller_name)
             
-            # Generate transfer message for Agent A to speak to Agent B
             transfer_message = await self.llm_service.generate_transfer_message(summary, to_agent)
             
             logger.info(f"Transfer {transfer_id} initiated from {from_room} to {to_room}")
             
-            # Update status to in_progress
             transfer_info.status = "in_progress"
             
             return transfer_info
@@ -81,13 +72,9 @@ class TransferService:
     async def _setup_destination_room(self, room_name: str, agent_name: str):
         """Set up the destination room for the transfer"""
         try:
-            # For warm transfer, Agent B should join the SAME room as the caller
-            # The caller will be moved to this room, and Agent B will join them
             try:
-                # Try to join existing room first
                 room_info = await self.room_manager.join_room(room_name, agent_name, is_agent=True)
             except:
-                # Room doesn't exist, create it
                 room_info = await self.room_manager.create_room(room_name, agent_name, is_agent=True)
             
             logger.info(f"Destination room {room_name} set up for agent {agent_name}")
@@ -100,13 +87,10 @@ class TransferService:
     async def _move_caller_to_destination_room(self, from_room: str, to_room: str, caller_name: str):
         """Move the caller from source room to destination room"""
         try:
-            # Remove caller from source room
             await self.room_manager.remove_participant(from_room, caller_name)
             
-            # Add caller to destination room
             await self.room_manager.join_room(to_room, caller_name, is_agent=False)
             
-            # Copy conversation history to destination room
             conversation_history = self.room_manager.get_room_conversation_history(from_room)
             for message in conversation_history:
                 self.room_manager.add_conversation_message(to_room, message["speaker"], message["message"])
@@ -130,14 +114,11 @@ class TransferService:
             
             transfer_info = self.active_transfers[transfer_id]
             
-            # Verify transfer details
             if transfer_info.from_room != from_room or transfer_info.to_room != to_room:
                 raise ValueError("Transfer room mismatch")
             
-            # Remove Agent A from the original room
             await self.room_manager.remove_participant(from_room, transfer_info.from_agent)
             
-            # Update transfer status
             transfer_info.status = "completed"
             
             logger.info(f"Transfer {transfer_id} completed successfully")
@@ -153,7 +134,6 @@ class TransferService:
             
         except Exception as e:
             logger.error(f"Error completing transfer {transfer_id}: {e}")
-            # Mark transfer as failed
             if transfer_id in self.active_transfers:
                 self.active_transfers[transfer_id].status = "failed"
             raise
@@ -180,7 +160,6 @@ class TransferService:
             if transfer_info.status not in ["initiated", "in_progress"]:
                 raise ValueError(f"Cannot cancel transfer in status: {transfer_info.status}")
             
-            # Update status
             transfer_info.status = "cancelled"
             
             logger.info(f"Transfer {transfer_id} cancelled")
@@ -214,7 +193,7 @@ class TransferService:
         for transfer_id, transfer_info in self.active_transfers.items():
             if transfer_info.status in ["completed", "failed", "cancelled"]:
                 time_diff = current_time - transfer_info.created_at
-                if time_diff.total_seconds() > 3600:  # 1 hour
+                if time_diff.total_seconds() > 3600:
                     transfers_to_remove.append(transfer_id)
         
         for transfer_id in transfers_to_remove:

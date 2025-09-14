@@ -35,10 +35,8 @@ class LLMService:
             logger.warning("OpenAI client not available, using fallback summary")
             return self._generate_fallback_summary(conversation_history)
         
-        # Format conversation history
         formatted_conversation = self._format_conversation(conversation_history)
         
-        # Create the prompt
         prompt = self._create_summary_prompt(formatted_conversation, context)
         
         try:
@@ -107,7 +105,6 @@ Please provide a clear, concise summary (2-3 sentences) that will help the recei
         if not conversation_history:
             return "No conversation history available."
         
-        # Extract key information from conversation
         caller_messages = [msg for msg in conversation_history if msg.get("speaker", "").lower() != "agent"]
         agent_messages = [msg for msg in conversation_history if msg.get("speaker", "").lower() == "agent"]
         
@@ -140,7 +137,7 @@ Please continue assisting the caller with this information. The previous agent h
         try:
             if not self.openai_client:
                 logger.warning("OpenAI client not available for speech generation")
-                return None
+                return self._generate_fallback_speech(text)
             
             response = self.openai_client.audio.speech.create(
                 model="tts-1",
@@ -148,7 +145,6 @@ Please continue assisting the caller with this information. The previous agent h
                 input=text
             )
             
-            # Convert audio to base64 for transmission
             audio_data = response.content
             audio_base64 = base64.b64encode(audio_data).decode('utf-8')
             
@@ -157,6 +153,26 @@ Please continue assisting the caller with this information. The previous agent h
             
         except Exception as e:
             logger.error(f"Error generating speech: {e}")
+            return self._generate_fallback_speech(text)
+    
+    def _generate_fallback_speech(self, text: str) -> str:
+        """Generate fallback speech when OpenAI TTS is unavailable"""
+        try:
+            fallback_data = {
+                "type": "fallback",
+                "text": text,
+                "message": "OpenAI TTS unavailable. Please read the summary aloud to Agent B."
+            }
+            
+            import json
+            fallback_json = json.dumps(fallback_data)
+            fallback_base64 = base64.b64encode(fallback_json.encode('utf-8')).decode('utf-8')
+            
+            logger.info(f"Generated fallback speech for text: {text[:50]}...")
+            return fallback_base64
+            
+        except Exception as e:
+            logger.error(f"Error generating fallback speech: {e}")
             return None
 
     async def analyze_sentiment(self, conversation_history: List[Dict[str, str]]) -> str:
@@ -164,7 +180,6 @@ Please continue assisting the caller with this information. The previous agent h
         if not conversation_history:
             return "neutral"
         
-        # Simple sentiment analysis based on keywords
         positive_keywords = ["thank", "great", "excellent", "happy", "satisfied", "good", "perfect"]
         negative_keywords = ["angry", "frustrated", "disappointed", "terrible", "awful", "bad", "problem"]
         
@@ -188,8 +203,7 @@ Please continue assisting the caller with this information. The previous agent h
             message = msg.get("message", "")
             speaker = msg.get("speaker", "")
             
-            # Look for important information
             if any(keyword in message.lower() for keyword in ["account", "order", "payment", "refund", "issue", "problem"]):
                 key_points.append(f"{speaker}: {message[:100]}...")
         
-        return key_points[:5]  # Limit to 5 key points
+        return key_points[:5]
