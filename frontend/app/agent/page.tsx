@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { 
-  Phone, Users, ArrowRight, MessageSquare 
+import {
+  Phone, Users, ArrowRight, MessageSquare
 } from 'lucide-react'
 import { Room, RoomEvent, RemoteParticipant, Track } from 'livekit-client'
 import api from '../../lib/axios'
@@ -32,7 +32,7 @@ export default function AgentPage() {
   const router = useRouter()
   const participantName = searchParams.get('name') || 'Agent'
   const { success, error, warning } = useNotification()
-  
+
   const [room, setRoom] = useState<Room | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
@@ -44,7 +44,9 @@ export default function AgentPage() {
   const [transferToPhone, setTransferToPhone] = useState('')
   const [transferType, setTransferType] = useState<'agent' | 'phone'>('agent')
   const [isTransferring, setIsTransferring] = useState(false)
-  const [conversationHistory, setConversationHistory] = useState<Array<{speaker: string, message: string, timestamp: string}>>([])
+  const [conversationHistory, setConversationHistory] = useState<Array<{ speaker: string, message: string, timestamp: string }>>([])
+  const [currentRoomName, setCurrentRoomName] = useState<string>('')
+  const [isPlayingSummary, setIsPlayingSummary] = useState(false)
   const [notifications, setNotifications] = useState([
     {
       id: '1',
@@ -76,9 +78,9 @@ export default function AgentPage() {
     try {
       setIsConnecting(true)
 
-      const roomName = `agent-room-${Date.now()}`
-      
-      const response = await api.post('/api/rooms/create', {
+      const roomName = `agent-room-${participantName.toLowerCase().replace(/\s+/g, '-')}`
+
+      const response = await api.post('/api/token/generate', {
         room_name: roomName,
         participant_name: participantName,
         is_agent: true
@@ -86,7 +88,7 @@ export default function AgentPage() {
 
       const roomData = response.data
       const token = roomData.token
-      
+
       // Connect to LiveKit room
       const newRoom = new Room({
         adaptiveStream: true,
@@ -100,22 +102,33 @@ export default function AgentPage() {
       })
 
       newRoom.on(RoomEvent.Connected, () => {
-        console.log('Connected to room')
         setIsConnected(true)
         setIsConnecting(false)
         success('Connected', 'Successfully connected to agent room')
+        
+        const existingParticipants = Array.from(newRoom.remoteParticipants.values())
+        setParticipants(existingParticipants)
+        
+        existingParticipants.forEach(participant => {
+          setNotifications(prev => [...prev, {
+            id: `existing-${participant.identity}`,
+            type: 'call' as const,
+            title: 'Participant Already Connected',
+            message: `${participant.name || participant.identity} is already in the call`,
+            timestamp: 'Just now',
+            unread: true
+          }])
+        })
       })
 
       newRoom.on(RoomEvent.Disconnected, () => {
-        console.log('Disconnected from room')
         setIsConnected(false)
         setIsConnecting(false)
       })
 
       newRoom.on(RoomEvent.ParticipantConnected, (participant) => {
-        console.log('Participant connected:', participant.identity)
         setParticipants(prev => [...prev, participant])
-        
+
         setNotifications(prev => [...prev, {
           id: `caller-${Date.now()}`,
           type: 'call' as const,
@@ -124,7 +137,7 @@ export default function AgentPage() {
           timestamp: 'Just now',
           unread: true
         }])
-        
+
         setConversationHistory(prev => [...prev, {
           speaker: participant.name || participant.identity,
           message: 'joined the call',
@@ -133,9 +146,8 @@ export default function AgentPage() {
       })
 
       newRoom.on(RoomEvent.ParticipantDisconnected, (participant) => {
-        console.log('Participant disconnected:', participant.identity)
         setParticipants(prev => prev.filter(p => p.identity !== participant.identity))
-        
+
         setNotifications(prev => [...prev, {
           id: `caller-left-${Date.now()}`,
           type: 'call' as const,
@@ -144,7 +156,7 @@ export default function AgentPage() {
           timestamp: 'Just now',
           unread: true
         }])
-        
+
         setConversationHistory(prev => [...prev, {
           speaker: participant.name || participant.identity,
           message: 'left the call',
@@ -153,7 +165,6 @@ export default function AgentPage() {
       })
 
       newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-        console.log('Track subscribed:', track.kind, participant.identity)
         if (track.kind === Track.Kind.Audio) {
           const audioElement = track.attach()
           audioElement.play()
@@ -161,20 +172,19 @@ export default function AgentPage() {
       })
 
       newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-        console.log('Track unsubscribed:', track.kind, participant.identity)
         track.detach()
       })
 
       const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
       if (!livekitUrl) {
-        throw new Error('LiveKit URL not configured. Please check your environment variables.')
+        throw new Error('LiveKit URL not configured. Please set NEXT_PUBLIC_LIVEKIT_URL in your environment variables.')
       }
 
       await newRoom.connect(livekitUrl, token)
       setRoom(newRoom)
+      setCurrentRoomName(roomName)
 
     } catch (err) {
-      console.error('Error connecting to room:', err)
       const errorMessage = err instanceof Error ? err.message : 'Failed to connect to room'
       error('Connection Failed', errorMessage)
       setIsConnecting(false)
@@ -188,6 +198,7 @@ export default function AgentPage() {
       setIsConnected(false)
       setParticipants([])
       setActiveTransfer(null)
+      setCurrentRoomName('')
     }
   }
 
@@ -216,7 +227,7 @@ export default function AgentPage() {
       warning('Invalid Input', 'Please enter the agent name to transfer to')
       return
     }
-    
+
     if (transferType === 'phone' && !transferToPhone.trim()) {
       warning('Invalid Input', 'Please enter the phone number to transfer to')
       return
@@ -229,7 +240,7 @@ export default function AgentPage() {
 
     try {
       setIsTransferring(true)
-      
+
       const caller = participants.find(p => !p.metadata || !p.metadata.includes('is_agent'))
       if (!caller) {
         warning('No Caller Found', 'No caller found in the room to transfer')
@@ -237,14 +248,14 @@ export default function AgentPage() {
       }
 
       if (transferType === 'phone') {
-        // Handle phone transfer via Twilio
         const response = await api.post('/api/twilio/dial', {
           phone_number: transferToPhone,
-          room_name: room.name
+          room_name: room.name,
+          agent_name: participantName
         })
 
         success('Phone Transfer Initiated', `Calling ${transferToPhone} for warm transfer`)
-        
+
         setNotifications(prev => [...prev, {
           id: `phone-transfer-${Date.now()}`,
           type: 'transfer' as const,
@@ -253,10 +264,10 @@ export default function AgentPage() {
           timestamp: 'Just now',
           unread: true
         }])
-      } else {
-        // Handle agent transfer
-        const toRoom = `transfer-room-${Date.now()}`
-        
+      }
+      else {
+        const toRoom = `agent-room-${transferToAgent.toLowerCase().replace(/\s+/g, '-')}`
+
         const response = await api.post('/api/transfer/initiate', {
           from_room: room.name,
           to_room: toRoom,
@@ -267,9 +278,9 @@ export default function AgentPage() {
 
         const transferInfo = response.data
         setActiveTransfer(transferInfo)
-        
+
         success('Transfer Initiated', `Warm transfer to ${transferToAgent} has been initiated`)
-        
+
         setNotifications(prev => [...prev, {
           id: `transfer-${Date.now()}`,
           type: 'transfer' as const,
@@ -278,19 +289,49 @@ export default function AgentPage() {
           timestamp: 'Just now',
           unread: true
         }])
+
+        setConversationHistory(prev => [...prev, {
+          speaker: participantName,
+          message: `Initiating warm transfer to ${transferToAgent}. Call summary: ${transferInfo.summary}`,
+          timestamp: new Date().toISOString()
+        }])
       }
-      
-      setConversationHistory(prev => [...prev, {
-        speaker: participantName,
-        message: `Initiating warm transfer to ${transferType === 'phone' ? transferToPhone : transferToAgent}`,
-        timestamp: new Date().toISOString()
-      }])
 
     } catch (err) {
-      console.error('Error initiating transfer:', err)
       error('Transfer Failed', err instanceof Error ? err.message : 'Failed to initiate transfer')
     } finally {
       setIsTransferring(false)
+    }
+  }
+
+  const playTransferSummary = async () => {
+    if (!activeTransfer?.summary) return
+
+    try {
+      setIsPlayingSummary(true)
+
+      const response = await api.post('/api/speech/generate', {
+        text: `Warm transfer summary for ${activeTransfer.to_agent}: ${activeTransfer.summary}`,
+        voice: 'alloy'
+      })
+
+      if (response.data.audio) {
+        const audio = new Audio(`data:audio/mp3;base64,${response.data.audio}`)
+        audio.onended = () => setIsPlayingSummary(false)
+        audio.onerror = () => {
+          setIsPlayingSummary(false)
+          error('Audio Error', 'Failed to play transfer summary')
+        }
+        await audio.play()
+      } else {
+        setIsPlayingSummary(false)
+        error('Audio Error', 'Failed to generate speech for transfer summary')
+      }
+
+    } catch (err) {
+      console.error('Error playing transfer summary:', err)
+      setIsPlayingSummary(false)
+      error('Audio Error', 'Failed to play transfer summary')
     }
   }
 
@@ -306,13 +347,15 @@ export default function AgentPage() {
 
       setConversationHistory(prev => [...prev, {
         speaker: participantName,
-        message: 'Transfer completed successfully',
+        message: 'Transfer completed successfully - Agent A has exited the call',
         timestamp: new Date().toISOString()
       }])
 
+      success('Transfer Completed', 'Warm transfer completed successfully. Agent A has exited the call.')
+
       setTimeout(() => {
         disconnectFromRoom()
-      }, 2000)
+      }, 3000)
 
     } catch (err) {
       console.error('Error completing transfer:', err)
@@ -329,6 +372,9 @@ export default function AgentPage() {
             <div>
               <h1 className="text-3xl font-bold text-white">Agent Interface</h1>
               <p className="text-zinc-300 text-lg">Welcome, {participantName}</p>
+              {currentRoomName && (
+                <p className="text-zinc-400 text-sm">Room: {currentRoomName}</p>
+              )}
             </div>
             <div className="flex items-center gap-4">
               <NotificationPanel
@@ -353,18 +399,17 @@ export default function AgentPage() {
         {/* Connection Status */}
         <div className="mb-8 flex items-center justify-between p-6 bg-[#0D0D0D] border border-white/5 rounded-[20px] hover:border-white/10 transition-all duration-300" style={{ boxShadow: "inset 0px 2px 0px 0px rgba(184, 180, 180, 0.08)" }}>
           <div className="flex items-center space-x-4">
-            <div className={`w-4 h-4 rounded-full ${
-              isConnected ? 'bg-green-500 shadow-lg shadow-green-500/50' : 
-              isConnecting ? 'bg-yellow-500 animate-pulse shadow-lg shadow-yellow-500/50' : 
-              'bg-red-500 shadow-lg shadow-red-500/50'
-            }`} />
+            <div className={`w-4 h-4 rounded-full ${isConnected ? 'bg-green-500 shadow-lg shadow-green-500/50' :
+              isConnecting ? 'bg-yellow-500 animate-pulse shadow-lg shadow-yellow-500/50' :
+                'bg-red-500 shadow-lg shadow-red-500/50'
+              }`} />
             <span className="font-semibold text-white text-lg">
-              {isConnected ? 'Connected' : 
-               isConnecting ? 'Connecting...' : 
-               'Disconnected'}
+              {isConnected ? 'Connected' :
+                isConnecting ? 'Connecting...' :
+                  'Disconnected'}
             </span>
           </div>
-          
+
           {activeTransfer && (
             <div className="px-4 py-2 bg-blue-500/20 border border-blue-500/30 rounded-[10px]">
               <span className="text-blue-300 font-medium">Transfer in Progress</span>
@@ -401,7 +446,7 @@ export default function AgentPage() {
           {/* Call Controls */}
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-white">Call Controls</h2>
-            
+
             <div className="space-y-4">
               {!isConnected ? (
                 <MainButton
@@ -418,7 +463,7 @@ export default function AgentPage() {
                     size="md"
                     onClick={disconnectFromRoom}
                   />
-                  
+
                   <div className="grid grid-cols-2 gap-3">
                     <IOKnob
                       value={isMuted}
@@ -448,28 +493,25 @@ export default function AgentPage() {
               <ArrowRight className="w-5 h-5 mr-2" />
               Warm Transfer
             </h2>
-            
+
             {!activeTransfer ? (
               <div className="space-y-4">
-                {/* Transfer Type Selection */}
                 <div className="flex gap-2 mb-4">
                   <button
                     onClick={() => setTransferType('agent')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      transferType === 'agent'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-                    }`}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${transferType === 'agent'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                      }`}
                   >
                     Agent
                   </button>
                   <button
                     onClick={() => setTransferType('phone')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      transferType === 'phone'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-                    }`}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${transferType === 'phone'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                      }`}
                   >
                     Phone
                   </button>
@@ -496,7 +538,7 @@ export default function AgentPage() {
                     required
                   />
                 )}
-                
+
                 <MainButton
                   name={isTransferring ? "Initiating..." : `Initiate ${transferType === 'phone' ? 'Phone' : 'Agent'} Transfer`}
                   variant="light"
@@ -514,30 +556,41 @@ export default function AgentPage() {
                   {activeTransfer.summary && (
                     <div className="mt-3">
                       <p className="text-sm font-medium text-blue-300 mb-1">Call Summary:</p>
-                      <p className="text-sm text-blue-200 bg-blue-500/20 p-3 rounded-lg">
+                      <p className="text-sm text-blue-200 bg-blue-500/20 p-3 rounded-lg mb-3">
                         {activeTransfer.summary}
                       </p>
+                      <MainButton
+                        name={isPlayingSummary ? "Playing Summary..." : "Play Summary to Agent B"}
+                        variant="light"
+                        size="sm"
+                        onClick={playTransferSummary}
+                      />
                     </div>
                   )}
                 </div>
-                
-                <MainButton
-                  name="Complete Transfer"
-                  variant="dark"
-                  size="sm"
-                  onClick={completeTransfer}
-                />
+
+                <div className="space-y-2">
+                  <MainButton
+                    name="Complete Transfer"
+                    variant="dark"
+                    size="sm"
+                    onClick={completeTransfer}
+                  />
+                  <p className="text-xs text-zinc-400 text-center">
+                    Agent A will exit the call after completion
+                  </p>
+                </div>
               </div>
             )}
           </div>
 
-            {/* Participants */}
+          {/* Participants */}
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-white flex items-center">
               <Users className="w-5 h-5 mr-2" />
               Participants
             </h2>
-            
+
             <div className="space-y-4">
               {/* Local Participant */}
               <ParticipantCard
@@ -578,7 +631,7 @@ export default function AgentPage() {
               <MessageSquare className="w-5 h-5 mr-2" />
               Conversation History
             </h2>
-            
+
             <div className="space-y-3 max-h-64 overflow-y-auto p-6 bg-[#0D0D0D] border border-white/5 rounded-[20px] hover:border-white/10 transition-all duration-300" style={{ boxShadow: "inset 0px 2px 0px 0px rgba(184, 180, 180, 0.08)" }}>
               {conversationHistory.map((entry, index) => (
                 <div key={index} className="flex items-start space-x-3 p-3 bg-[#0D0D0D] border border-white/5 rounded-[10px]">

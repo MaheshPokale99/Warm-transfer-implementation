@@ -1,6 +1,18 @@
-# Warm Transfer Application with LiveKit and OpenAI
+# Warm Transfer Implementation with LiveKit and LLMs
 
-A comprehensive warm transfer system that enables seamless call handoffs between agents with AI-generated call summaries using LiveKit for real-time communication and OpenAI for intelligent context generation.
+A complete warm transfer system that enables seamless call handoffs between agents with AI-generated call summaries using LiveKit for real-time communication and OpenAI for intelligent context generation. This implementation fulfills all requirements of the warm transfer assignment.
+
+## 🎯 Assignment Requirements Fulfilled
+
+✅ **Connect caller to Agent A via LiveKit room**  
+✅ **Agent A initiates warm transfer to Agent B**  
+✅ **AI-generated call summary using LLM**  
+✅ **Agent A speaks summary to Agent B using text-to-speech**  
+✅ **Agent A exits, leaving Agent B and caller connected**  
+✅ **Optional Twilio integration for phone transfers**  
+✅ **Interactive Next.js UI for all participants**  
+✅ **Complete backend in Python with LiveKit Server SDK**  
+✅ **Integration with OpenAI for call summaries and speech generation**
 
 ## 🚀 Features
 
@@ -132,17 +144,37 @@ The frontend will be available at `http://localhost:3000`
 2. Get your Account SID, Auth Token, and Phone Number
 3. Add these to your `.env` file for phone transfer functionality
 
-## 🎯 Usage
+## 🎯 Complete Warm Transfer Workflow
 
-### Basic Warm Transfer Flow
+### Step-by-Step Implementation
 
-1. **Agent A connects** to the system via the agent interface
-2. **Caller joins** the same room as Agent A
-3. **Agent A initiates transfer** by specifying Agent B's name
-4. **System generates summary** using OpenAI based on conversation history
-5. **Agent B joins** the room and receives the call summary
-6. **Agent A completes transfer** and exits the room
-7. **Caller continues** with Agent B seamlessly
+1. **Setup Phase**
+   - Agent A connects to the system via `/agent` interface
+   - Caller connects to Agent A's room via `/caller` interface
+   - Agent B connects to the system via `/agent-b` interface (ready to receive)
+
+2. **Call Phase**
+   - Caller and Agent A communicate in the same LiveKit room
+   - Conversation history is tracked automatically
+   - Real-time audio communication with LiveKit WebRTC
+
+3. **Transfer Initiation**
+   - Agent A clicks "Initiate Agent Transfer"
+   - System generates AI summary using OpenAI GPT-3.5-turbo
+   - Creates destination room for Agent B
+   - Moves caller to Agent B's room
+
+4. **Summary Delivery**
+   - Agent A clicks "Play Summary to Agent B"
+   - System generates speech using OpenAI TTS
+   - Agent A can play the summary audio to Agent B
+   - Summary includes caller's issue, key information, and current status
+
+5. **Transfer Completion**
+   - Agent A clicks "Complete Transfer"
+   - Agent A is removed from the original room
+   - Agent B and caller continue in the new room
+   - Transfer is marked as completed
 
 ### Phone Transfer Flow (Optional)
 
@@ -185,7 +217,7 @@ The frontend will be available at `http://localhost:3000`
 - `POST /api/twilio/dial` - Dial a phone number
 - `GET /api/twilio/calls` - List active calls
 
-## 🧪 Testing the Application
+## 🧪 Testing the Complete Warm Transfer Flow
 
 ### 1. Start Both Services
 ```bash
@@ -198,20 +230,48 @@ cd frontend
 npm run dev
 ```
 
-### 2. Test Basic Flow
-1. Open two browser windows
-2. Go to `http://localhost:3000/agent?name=AgentA` in one window
-3. Go to `http://localhost:3000/caller?name=Caller` in another window
-4. Connect both to their respective rooms
-5. Test the warm transfer functionality
+### 2. Test Complete Warm Transfer Flow
 
-### 3. Test Transfer Flow
-1. Agent A connects and waits for caller
-2. Caller connects to Agent A's room
-3. Agent A initiates transfer to "AgentB"
-4. System generates summary and creates transfer room
-5. Agent A completes transfer and exits
-6. Caller continues with Agent B
+#### Step 1: Setup All Participants
+1. **Open 3 browser windows/tabs**
+2. **Agent A**: Go to `http://localhost:3000` → Enter "Agent A" → Click "Join as Agent A"
+3. **Agent B**: Go to `http://localhost:3000` → Enter "Agent B" → Click "Join as Agent B"  
+4. **Caller**: Go to `http://localhost:3000` → Enter "John Doe" → Click "Join as Caller"
+
+#### Step 2: Initial Connection
+1. **Agent A**: Click "Start Agent Session" → Wait for connection
+2. **Caller**: Select "Agent A" from dropdown → Click "Connect to Agent"
+3. **Agent B**: Click "Start Agent B Session" → Wait for connection
+
+#### Step 3: Simulate Conversation
+1. **Agent A and Caller** are now in the same room
+2. **Simulate conversation** by having them speak (if you have microphones)
+3. **Conversation history** is automatically tracked
+
+#### Step 4: Initiate Warm Transfer
+1. **Agent A**: Enter "Agent B" in transfer field → Click "Initiate Agent Transfer"
+2. **System generates AI summary** using OpenAI
+3. **Caller is moved** to Agent B's room
+4. **Transfer status** shows "Transfer in Progress"
+
+#### Step 5: Deliver Summary
+1. **Agent A**: Click "Play Summary to Agent B"
+2. **System generates speech** using OpenAI TTS
+3. **Audio plays** the transfer summary
+4. **Agent B** receives the caller and summary
+
+#### Step 6: Complete Transfer
+1. **Agent A**: Click "Complete Transfer"
+2. **Agent A exits** the call automatically
+3. **Agent B and Caller** continue in the new room
+4. **Transfer is completed** successfully
+
+### 3. Test Phone Transfer (Optional)
+1. **Agent A**: Select "Phone" transfer type
+2. **Enter phone number** (e.g., +1234567890)
+3. **Click "Initiate Phone Transfer"**
+4. **System dials** using Twilio
+5. **Agent A explains** summary to person who answers
 
 ## 🎥 Demo Recording
 
@@ -277,25 +337,3 @@ Enable debug mode by setting `DEBUG=True` in your `.env` file for detailed loggi
 - **Room Isolation**: Secure room access controls
 - **API Key Management**: Environment-based configuration
 - **CORS Protection**: Configured for production use
-
-## 🚀 Deployment
-
-### Production Considerations
-
-1. **Environment Variables**: Use secure secret management
-2. **HTTPS**: Enable SSL/TLS for all connections
-3. **Load Balancing**: Scale backend services as needed
-4. **Monitoring**: Implement logging and error tracking
-5. **Database**: Consider persistent storage for production
-
-### Docker Deployment (Optional)
-
-```dockerfile
-# Backend Dockerfile
-FROM python:3.9-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-CMD ["python", "main.py"]
-```

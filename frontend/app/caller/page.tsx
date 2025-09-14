@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Phone, Users } from 'lucide-react'
-import { Room, RoomEvent, RemoteParticipant,  Track } from 'livekit-client'
+import { Room, RoomEvent, RemoteParticipant, Track } from 'livekit-client'
 import api from '../../lib/axios'
 import MainButton from '../../components/ui/MainButton'
 import IOKnob from '../../components/ui/IOKnob'
@@ -12,20 +12,22 @@ import NotificationPanel from '../../components/ui/NotificationPanel'
 import ParticipantCard from '../../components/ui/ParticipantCard'
 import { useNotification } from '../../components/ui/NotificationProvider'
 
-interface CallerPageProps {}
+interface CallerPageProps { }
 
-export default function CallerPage({}: CallerPageProps) {
+export default function CallerPage({ }: CallerPageProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const participantName = searchParams.get('name') || 'Caller'
   const { success, error } = useNotification()
-  
+
   const [room, setRoom] = useState<Room | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [isDeafened, setIsDeafened] = useState(false)
   const [participants, setParticipants] = useState<RemoteParticipant[]>([])
+  const [selectedAgent, setSelectedAgent] = useState('Agent A')
+  const [availableAgents, setAvailableAgents] = useState<string[]>(['Agent A', 'Agent B'])
   const [notifications, setNotifications] = useState([
     {
       id: '1',
@@ -45,20 +47,37 @@ export default function CallerPage({}: CallerPageProps) {
     }
   }, [room])
 
+  // Fetch available agents from backend
+  useEffect(() => {
+    const fetchAvailableAgents = async () => {
+      try {
+        const response = await api.get('/api/agents/available')
+        if (response.data && response.data.agents) {
+          setAvailableAgents(response.data.agents)
+        }
+      } catch (error) {
+        console.log('Could not fetch available agents, using defaults')
+        // Keep default agents if API fails
+      }
+    }
+    
+    fetchAvailableAgents()
+  }, [])
+
   const connectToRoom = async () => {
     try {
       setIsConnecting(true)
 
-      const roomName = `caller-room-${Date.now()}`
-      
-      const response = await api.post('/api/rooms/create', {
+      const roomName = `agent-room-${selectedAgent.toLowerCase().replace(/\s+/g, '-')}`
+
+      const response = await api.post('/api/token/generate', {
         room_name: roomName,
         participant_name: participantName,
         is_agent: false
       })
 
       const roomData = response.data
-      
+
       // Connect to LiveKit room
       const newRoom = new Room({
         adaptiveStream: true,
@@ -72,22 +91,35 @@ export default function CallerPage({}: CallerPageProps) {
       })
 
       newRoom.on(RoomEvent.Connected, () => {
-        console.log('Connected to room')
         setIsConnected(true)
         setIsConnecting(false)
         success('Connected', 'Successfully connected to caller room')
+        
+        // Add existing participants to the list
+        const existingParticipants = Array.from(newRoom.remoteParticipants.values())
+        setParticipants(existingParticipants)
+        
+        // Add notifications for existing participants
+        existingParticipants.forEach(participant => {
+          setNotifications(prev => [...prev, {
+            id: `existing-${participant.identity}`,
+            type: 'call' as const,
+            title: 'Agent Already Connected',
+            message: `${participant.name || participant.identity} is already in the call`,
+            timestamp: 'Just now',
+            unread: true
+          }])
+        })
       })
 
       newRoom.on(RoomEvent.Disconnected, () => {
-        console.log('Disconnected from room')
         setIsConnected(false)
         setIsConnecting(false)
       })
 
       newRoom.on(RoomEvent.ParticipantConnected, (participant) => {
-        console.log('Participant connected:', participant.identity)
         setParticipants(prev => [...prev, participant])
-        
+
         setNotifications(prev => [...prev, {
           id: `agent-${Date.now()}`,
           type: 'call' as const,
@@ -99,9 +131,8 @@ export default function CallerPage({}: CallerPageProps) {
       })
 
       newRoom.on(RoomEvent.ParticipantDisconnected, (participant) => {
-        console.log('Participant disconnected:', participant.identity)
         setParticipants(prev => prev.filter(p => p.identity !== participant.identity))
-        
+
         setNotifications(prev => [...prev, {
           id: `agent-left-${Date.now()}`,
           type: 'call' as const,
@@ -113,7 +144,6 @@ export default function CallerPage({}: CallerPageProps) {
       })
 
       newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-        console.log('Track subscribed:', track.kind, participant.identity)
         if (track.kind === Track.Kind.Audio) {
           const audioElement = track.attach()
           audioElement.play()
@@ -121,21 +151,19 @@ export default function CallerPage({}: CallerPageProps) {
       })
 
       newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-        console.log('Track unsubscribed:', track.kind, participant.identity)
         track.detach()
       })
 
       // Connect to the room
       const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
       if (!livekitUrl) {
-        throw new Error('LiveKit URL not configured. Please check your environment variables.')
+        throw new Error('LiveKit URL not configured. Please set NEXT_PUBLIC_LIVEKIT_URL in your environment variables.')
       }
 
       await newRoom.connect(livekitUrl, roomData.token)
       setRoom(newRoom)
 
     } catch (err) {
-      console.error('Error connecting to room:', err)
       const errorMessage = err instanceof Error ? err.message : 'Failed to connect to room'
       error('Connection Failed', errorMessage)
       setIsConnecting(false)
@@ -204,18 +232,17 @@ export default function CallerPage({}: CallerPageProps) {
         {/* Connection Status */}
         <div className="mb-8 flex items-center justify-between p-6 bg-[#0D0D0D] border border-white/5 rounded-[20px] hover:border-white/10 transition-all duration-300" style={{ boxShadow: "inset 0px 2px 0px 0px rgba(184, 180, 180, 0.08)" }}>
           <div className="flex items-center space-x-4">
-            <div className={`w-4 h-4 rounded-full ${
-              isConnected ? 'bg-green-500 shadow-lg shadow-green-500/50' : 
-              isConnecting ? 'bg-yellow-500 animate-pulse shadow-lg shadow-yellow-500/50' : 
-              'bg-red-500 shadow-lg shadow-red-500/50'
-            }`} />
+            <div className={`w-4 h-4 rounded-full ${isConnected ? 'bg-green-500 shadow-lg shadow-green-500/50' :
+                isConnecting ? 'bg-yellow-500 animate-pulse shadow-lg shadow-yellow-500/50' :
+                  'bg-red-500 shadow-lg shadow-red-500/50'
+              }`} />
             <span className="font-semibold text-white text-lg">
-              {isConnected ? 'Connected' : 
-               isConnecting ? 'Connecting...' : 
-               'Disconnected'}
+              {isConnected ? 'Connected' :
+                isConnecting ? 'Connecting...' :
+                  'Disconnected'}
             </span>
           </div>
-          
+
         </div>
 
 
@@ -247,15 +274,29 @@ export default function CallerPage({}: CallerPageProps) {
           {/* Call Controls */}
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-white">Call Controls</h2>
-            
+
             <div className="space-y-4">
               {!isConnected ? (
-                <MainButton
-                  name={isConnecting ? "Connecting..." : "Connect to Agent"}
-                  variant="dark"
-                  size="md"
-                  onClick={connectToRoom}
-                />
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-300">Select Agent</label>
+                    <select
+                      value={selectedAgent}
+                      onChange={(e) => setSelectedAgent(e.target.value)}
+                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    >
+                      {availableAgents.map((agent) => (
+                        <option key={agent} value={agent}>{agent}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <MainButton
+                    name={isConnecting ? "Connecting..." : "Connect to Agent"}
+                    variant="dark"
+                    size="md"
+                    onClick={connectToRoom}
+                  />
+                </>
               ) : (
                 <div className="space-y-4">
                   <MainButton
@@ -264,7 +305,7 @@ export default function CallerPage({}: CallerPageProps) {
                     size="md"
                     onClick={disconnectFromRoom}
                   />
-                  
+
                   <div className="grid grid-cols-2 gap-3">
                     <IOKnob
                       value={isMuted}
@@ -294,7 +335,7 @@ export default function CallerPage({}: CallerPageProps) {
               <Users className="w-5 h-5 mr-2" />
               Participants
             </h2>
-            
+
             <div className="space-y-4">
               {/* Local Participant */}
               <ParticipantCard

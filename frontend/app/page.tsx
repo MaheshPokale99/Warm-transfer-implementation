@@ -134,12 +134,20 @@ export default function Home() {
                     required
                   />
 
-                  <MainButton
-                    name="Join as Agent"
-                    variant="light"
-                    size="sm"
-                    onClick={handleJoinAsAgent}
-                  />
+                  <div className="space-y-2">
+                    <MainButton
+                      name="Join as Agent A"
+                      variant="light"
+                      size="sm"
+                      onClick={handleJoinAsAgent}
+                    />
+                    <MainButton
+                      name="Join as Agent B"
+                      variant="dark"
+                      size="sm"
+                      onClick={() => router.push(`/agent-b?name=${encodeURIComponent(agentName)}`)}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

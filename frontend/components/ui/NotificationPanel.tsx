@@ -125,9 +125,8 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                         onNotificationClick?.(notification);
                         setIsOpen(false);
                       }}
-                      className={`w-full text-left px-4 py-3 hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/30 last:border-b-0 ${
-                        notification.unread ? 'bg-zinc-800/20' : ''
-                      }`}
+                      className={`w-full text-left px-4 py-3 hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/30 last:border-b-0 ${notification.unread ? 'bg-zinc-800/20' : ''
+                        }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-8 h-8 rounded-lg ${getNotificationColor(notification.type)} flex items-center justify-center flex-shrink-0`}>

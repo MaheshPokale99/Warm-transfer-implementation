@@ -105,6 +105,23 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+@app.post("/api/token/generate")
+async def generate_token(request: RoomCreateRequest):
+    """Generate LiveKit access token"""
+    if not room_manager:
+        raise HTTPException(status_code=501, detail="Room manager not available")
+    
+    try:
+        room_info = await room_manager.create_room(
+            room_name=request.room_name,
+            participant_name=request.participant_name,
+            is_agent=request.is_agent
+        )
+        return {"token": room_info.token, "room_name": room_info.room_name}
+    except Exception as e:
+        logger.error(f"Error generating token: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/rooms/create", response_model=RoomInfo)
 async def create_room(request: RoomCreateRequest):
     """Create a new LiveKit room"""
@@ -189,6 +206,20 @@ async def generate_speech(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+@app.get("/api/agents/available")
+async def get_available_agents():
+    """Get list of available agents"""
+    try:
+        if not room_manager:
+            raise HTTPException(status_code=501, detail="Room manager not available")
+        
+        # Get all active agent rooms
+        available_agents = room_manager.get_available_agents()
+        return {"agents": available_agents}
+    except Exception as e:
+        logger.error(f"Error getting available agents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/ws/{room_name}")
 async def websocket_endpoint(websocket: WebSocket, room_name: str):

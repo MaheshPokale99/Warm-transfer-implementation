@@ -68,15 +68,7 @@ class RoomManager:
     async def create_room(self, room_name: str, participant_name: str, is_agent: bool = False) -> RoomInfo:
         """Create a new LiveKit room and generate access token"""
         if not LIVEKIT_AVAILABLE:
-            # Mock mode - return fake room info
-            return RoomInfo(
-                room_name=room_name,
-                token="mock-token",
-                url="wss://mock-livekit.com",
-                participant_name=participant_name,
-                is_agent=is_agent,
-                created_at=datetime.now()
-            )
+            raise RuntimeError("LiveKit is not available. Please install livekit package and configure credentials.")
             
         try:
             livekit_api = self._get_livekit_api()
@@ -92,21 +84,22 @@ class RoomManager:
             token = api.AccessToken(self.livekit_api_key, self.livekit_api_secret)
             token.with_identity(participant_name)
             token.with_name(participant_name)
-            token.with_grants(api.VideoGrants(
+            
+            # Set up grants based on participant type
+            grants = api.VideoGrants(
                 room_join=True,
                 room=room_name,
                 can_publish=True,
                 can_subscribe=True,
                 can_publish_data=True
-            ))
-
+            )
+            
             # Add agent-specific permissions
             if is_agent:
-                token.with_grants(api.VideoGrants(
-                    room_admin=True,
-                    can_update_own_metadata=True
-                ))
-
+                grants.room_admin = True
+                grants.can_update_own_metadata = True
+            
+            token.with_grants(grants)
             jwt_token = token.to_jwt()
 
             # Track room and participant
@@ -253,29 +246,53 @@ class RoomManager:
     def _generate_token(self, participant_name: str, room_name: str, is_agent: bool = False) -> str:
         """Generate a LiveKit access token"""
         if not LIVEKIT_AVAILABLE:
-            return "mock-token"
+            raise RuntimeError("LiveKit is not available. Please install livekit package and configure credentials.")
         
         try:
             # Generate access token
             token = api.AccessToken(self.livekit_api_key, self.livekit_api_secret)
             token.with_identity(participant_name)
             token.with_name(participant_name)
-            token.with_grants(api.VideoGrants(
+            
+            # Set up grants based on participant type
+            grants = api.VideoGrants(
                 room_join=True,
                 room=room_name,
                 can_publish=True,
                 can_subscribe=True,
                 can_publish_data=True
-            ))
-
+            )
+            
             # Add agent-specific permissions
             if is_agent:
-                token.with_grants(api.VideoGrants(
-                    room_admin=True,
-                    can_update_own_metadata=True
-                ))
-
+                grants.room_admin = True
+                grants.can_update_own_metadata = True
+            
+            token.with_grants(grants)
             return token.to_jwt()
         except Exception as e:
             logger.error(f"Failed to generate token: {e}")
             return "mock-token"
+
+    def get_available_agents(self) -> List[str]:
+        """Get list of available agents based on active agent rooms"""
+        try:
+            available_agents = []
+            
+            # Check all active rooms for agent rooms
+            for room_name, room_info in self.active_rooms.items():
+                if room_name.startswith('agent-room-'):
+                    # Extract agent name from room name
+                    agent_name = room_name.replace('agent-room-', '').replace('-', ' ').title()
+                    available_agents.append(agent_name)
+            
+            # If no agents found, return default agents
+            if not available_agents:
+                available_agents = ['Agent A', 'Agent B']
+            
+            logger.info(f"Available agents: {available_agents}")
+            return available_agents
+            
+        except Exception as e:
+            logger.error(f"Error getting available agents: {e}")
+            return ['Agent A', 'Agent B']

@@ -48,19 +48,18 @@ const StatusCard: React.FC<StatusCardProps> = ({
         <div className={`w-10 h-10 rounded-lg ${getStatusColor()} flex items-center justify-center`}>
           <Icon size={20} />
         </div>
-        
+
         {trend && (
-          <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-            trend.isPositive 
-              ? 'bg-green-500/20 text-green-300' 
+          <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${trend.isPositive
+              ? 'bg-green-500/20 text-green-300'
               : 'bg-red-500/20 text-red-300'
-          }`}>
+            }`}>
             <span>{trend.isPositive ? '↗' : '↘'}</span>
             <span>{Math.abs(trend.value)}%</span>
           </div>
         )}
       </div>
-      
+
       <div>
         <h3 className="text-sm font-medium text-zinc-400 mb-1">{title}</h3>
         <p className="text-xl font-bold text-white">{value}</p>

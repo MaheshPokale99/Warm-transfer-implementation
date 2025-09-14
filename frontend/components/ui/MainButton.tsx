@@ -30,10 +30,10 @@ const MainButton: React.FC<MainButtonProps> = ({ name, href = '', variant = 'dar
         font-semibold transition-all duration-300
         w-full sm:w-auto text-center cursor-pointer
         border border-white/5 hover:border-white/10
-        ${size === 'sm' ? 'py-3 px-6 text-sm' : 
-          size === 'lg' ? 'py-6 px-12 text-xl' : 
-          'py-4 px-8 text-base'}
-        ${variant === 'dark' 
+        ${size === 'sm' ? 'py-3 px-6 text-sm' :
+          size === 'lg' ? 'py-6 px-12 text-xl' :
+            'py-4 px-8 text-base'}
+        ${variant === 'dark'
           ? 'bg-[#0D0D0D] text-white hover:bg-[#1a1a1a]'
           : 'bg-white text-black hover:bg-gray-50'
         }

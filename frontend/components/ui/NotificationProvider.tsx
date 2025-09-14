@@ -36,15 +36,15 @@ const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addNotification = (type: Notification['type'], title: string, message?: string, duration = 5000) => {
     const id = Date.now() + Math.random().toString();
     const notification: Notification = { id, type, title, message, duration };
-    
+
     setNotifications(prev => [...prev, notification]);
-    
+
     if (duration > 0) {
       setTimeout(() => {
         removeNotification(id);
       }, duration);
     }
-    
+
     return id;
   };
 
@@ -52,13 +52,13 @@ const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setNotifications(prev => prev.filter(notif => notif.id !== id));
   };
 
-  const success = (title: string, message?: string, duration?: number) => 
+  const success = (title: string, message?: string, duration?: number) =>
     addNotification('success', title, message, duration);
-  const error = (title: string, message?: string, duration?: number) => 
+  const error = (title: string, message?: string, duration?: number) =>
     addNotification('error', title, message, duration);
-  const warning = (title: string, message?: string, duration?: number) => 
+  const warning = (title: string, message?: string, duration?: number) =>
     addNotification('warning', title, message, duration);
-  const info = (title: string, message?: string, duration?: number) => 
+  const info = (title: string, message?: string, duration?: number) =>
     addNotification('info', title, message, duration);
 
   return (
@@ -69,9 +69,9 @@ const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 };
 
-const NotificationContainer: React.FC<{ 
-  notifications: Notification[]; 
-  onRemove: (id: string) => void; 
+const NotificationContainer: React.FC<{
+  notifications: Notification[];
+  onRemove: (id: string) => void;
 }> = ({ notifications, onRemove }) => {
   return (
     <div className="fixed top-4 right-4 z-50 space-y-3 max-w-sm">
@@ -88,9 +88,9 @@ const NotificationContainer: React.FC<{
   );
 };
 
-const NotificationToast: React.FC<{ 
-  notification: Notification; 
-  onRemove: () => void; 
+const NotificationToast: React.FC<{
+  notification: Notification;
+  onRemove: () => void;
 }> = ({ notification, onRemove }) => {
   const { type, title, message } = notification;
 
@@ -151,7 +151,7 @@ const NotificationToast: React.FC<{
         <div className={`flex-shrink-0 ${styles.iconColor}`}>
           <Icon size={20} />
         </div>
-        
+
         <div className="flex-1 min-w-0">
           <h4 className={`text-sm font-semibold ${styles.titleColor}`}>
             {title}
@@ -162,7 +162,7 @@ const NotificationToast: React.FC<{
             </p>
           )}
         </div>
-        
+
         <button
           onClick={onRemove}
           className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-300 transition-colors duration-200"

@@ -35,10 +35,10 @@ const BlurTextReveal: React.FC<BlurTextRevealProps> = ({
     direction === "up"
       ? 10
       : direction === "down"
-      ? -10
-      : direction === "left"
-      ? 10
-      : -10;
+        ? -10
+        : direction === "left"
+          ? 10
+          : -10;
 
   const letterAnimation: Variants = {
     hidden: {

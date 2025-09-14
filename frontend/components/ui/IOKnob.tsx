@@ -20,9 +20,9 @@ const IOKnob: React.FC<IOKnobProps> = ({
     defaultValue = false,
     onChange,
     size = 50,
-    colorOff = "#E5E7EB", 
-    colorOn = "#3B82F6", 
-    knobFrom = "#F9FAFB", 
+    colorOff = "#E5E7EB",
+    colorOn = "#3B82F6",
+    knobFrom = "#F9FAFB",
     knobTo = "#F3F4F6",
     disabled = false,
     className = "",
@@ -57,9 +57,8 @@ const IOKnob: React.FC<IOKnobProps> = ({
                 aria-checked={isOn}
                 disabled={disabled}
                 onClick={toggle}
-                className={`relative rounded-full flex items-center justify-between select-none ${
-                    disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                }`}
+                className={`relative rounded-full flex items-center justify-between select-none ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                    }`}
                 style={{
                     width: trackWidth,
                     height: size,
