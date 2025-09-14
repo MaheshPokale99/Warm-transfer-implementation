@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Force dark theme for all elements */
+* {
+  color-scheme: dark;
+}
+
+html {
+  background: #0a0a0a;
+}
+
+/* Ensure all backgrounds are dark */
+div, section, main, article, aside, nav, header, footer {
+  background-color: transparent;
+}
+
+/* Custom styles for LiveKit components */
+.lk-room-container {
+  height: 100vh;
+  width: 100vw;
+}
+
+.lk-participant-tile {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.lk-audio-track {
+  border-radius: 8px;
+}
+
+.lk-video-track {
+  border-radius: 8px;
+}
+
+/* Custom button styles - Dark theme optimized */
+.btn-primary {
+  @apply bg-zinc-800/80 hover:bg-zinc-700/90 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 border border-zinc-700/50;
+}
+
+.btn-secondary {
+  @apply bg-zinc-700/60 hover:bg-zinc-600/80 text-zinc-200 font-medium py-2 px-4 rounded-lg transition-colors duration-200 border border-zinc-600/40;
+}
+
+.btn-danger {
+  @apply bg-red-900/80 hover:bg-red-800/90 text-red-100 font-medium py-2 px-4 rounded-lg transition-colors duration-200 border border-red-800/50;
+}
+
+.btn-success {
+  @apply bg-green-900/80 hover:bg-green-800/90 text-green-100 font-medium py-2 px-4 rounded-lg transition-colors duration-200 border border-green-800/50;
+}
+
+/* Status indicators */
+.status-indicator {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.status-connected {
+  @apply bg-green-500/10 text-green-400 border border-green-500/20;
+}
+
+.status-connecting {
+  @apply bg-zinc-500/10 text-zinc-400 border border-zinc-500/20;
+}
+
+.status-disconnected {
+  @apply bg-red-500/10 text-red-400 border border-red-500/20;
+}
+
+.status-transferring {
+  @apply bg-blue-500/10 text-blue-400 border border-blue-500/20;
+}
+
+/* Loading animations */
+.loading-spinner {
+  @apply animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500;
+}
+
+.pulse-dot {
+  @apply animate-pulse h-2 w-2 bg-blue-500 rounded-full;
+}
