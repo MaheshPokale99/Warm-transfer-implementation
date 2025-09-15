@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import {
   Phone, Users, ArrowRight, Shield, Brain, CheckCircle, Wifi
 } from 'lucide-react'
-import MainButton from '../components/ui/MainButton'
-import BlurTextReveal from '../components/ui/BlurTextReveal'
-import InputField from '../components/ui/InputField'
-import { useNotification } from '../components/ui/NotificationProvider'
+import MainButton from '@/components/ui/MainButton'
+import BlurTextReveal from '@/components/ui/BlurTextReveal'
+import InputField from '@/components/ui/InputField'
+import { useNotification } from '@/components/ui/NotificationProvider'
 
 export default function Home() {
   const router = useRouter()
