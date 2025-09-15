@@ -140,19 +140,20 @@ class RoomManager:
             token = api.AccessToken(self.livekit_api_key, self.livekit_api_secret)
             token.with_identity(participant_name)
             token.with_name(participant_name)
-            token.with_grants(api.VideoGrants(
+
+            grants = api.VideoGrants(
                 room_join=True,
                 room=room_name,
                 can_publish=True,
                 can_subscribe=True,
                 can_publish_data=True
-            ))
+            )
 
             if is_agent:
-                token.with_grants(api.VideoGrants(
-                    room_admin=True,
-                    can_update_own_metadata=True
-                ))
+                grants.room_admin = True
+                grants.can_update_own_metadata = True
+
+            token.with_grants(grants)
 
             jwt_token = token.to_jwt()
 

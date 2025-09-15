@@ -8,7 +8,11 @@ import axios from 'axios'
 import MainButton from '../../components/ui/MainButton'
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  baseURL: (() => {
+    if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL
+    if (typeof window !== 'undefined') return window.location.origin
+    return 'http://localhost:8000'
+  })(),
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
@@ -127,7 +131,7 @@ function CallerPageContent() {
         }
       })
 
-      newRoom.on(RoomEvent.Connected, () => {
+      newRoom.on(RoomEvent.Connected, async () => {
 
         setRoom(newRoom)
         currentRoomRef.current = newRoom
@@ -140,7 +144,10 @@ function CallerPageContent() {
         const existingParticipants = Array.from(newRoom.remoteParticipants.values())
         setParticipants(existingParticipants)
 
-        const newWsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/ws/${destinationRoom}`
+        const newWsBase = process.env.NEXT_PUBLIC_WS_URL || (typeof window !== 'undefined'
+          ? `${window.location.protocol === 'https:' ? 'wss://' : 'ws://'}${window.location.host}`
+          : 'ws://localhost:8000')
+        const newWsUrl = `${newWsBase}/ws/${destinationRoom}`
         const newWs = new WebSocket(newWsUrl)
 
         newWs.onopen = () => {
@@ -167,6 +174,10 @@ function CallerPageContent() {
         }
 
         setWsConnection(newWs)
+
+        try {
+          await newRoom.startAudio()
+        } catch {}
 
         setTimeout(() => {
           if (oldRoom && oldRoom !== newRoom && oldRoom.state !== 'disconnected') {
@@ -238,6 +249,9 @@ function CallerPageContent() {
       })
 
       await newRoom.connect(livekitUrl, callerToken)
+      try {
+        await newRoom.localParticipant.setMicrophoneEnabled(true)
+      } catch {}
 
     } catch (err) {
       setTransferInProgress(false)
@@ -281,7 +295,7 @@ function CallerPageContent() {
         }
       })
 
-      newRoom.on(RoomEvent.Connected, () => {
+      newRoom.on(RoomEvent.Connected, async () => {
         setIsConnected(true)
         setIsConnecting(false)
         setRoom(newRoom)
@@ -303,7 +317,10 @@ function CallerPageContent() {
         })
 
         // Setup WebSocket connection
-        const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/ws/${roomName}`
+        const wsBase = process.env.NEXT_PUBLIC_WS_URL || (typeof window !== 'undefined'
+          ? `${window.location.protocol === 'https:' ? 'wss://' : 'ws://'}${window.location.host}`
+          : 'ws://localhost:8000')
+        const wsUrl = `${wsBase}/ws/${roomName}`
         const ws = new WebSocket(wsUrl)
 
         ws.onopen = () => {
@@ -340,6 +357,10 @@ function CallerPageContent() {
         }
 
         setWsConnection(ws)
+
+        try {
+          await newRoom.startAudio()
+        } catch {}
       })
 
       newRoom.on(RoomEvent.Disconnected, () => {
@@ -399,6 +420,9 @@ function CallerPageContent() {
       }
 
       await newRoom.connect(livekitUrl, roomData.token)
+      try {
+        await newRoom.localParticipant.setMicrophoneEnabled(true)
+      } catch {}
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to connect to room'

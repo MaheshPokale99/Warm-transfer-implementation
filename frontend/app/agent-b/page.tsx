@@ -10,7 +10,11 @@ import axios from 'axios'
 import MainButton from '../../components/ui/MainButton'
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  baseURL: (() => {
+    if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL
+    if (typeof window !== 'undefined') return window.location.origin
+    return 'http://localhost:8000'
+  })(),
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
@@ -173,7 +177,7 @@ function AgentBPageContent() {
                 }
             })
 
-            newRoom.on(RoomEvent.Connected, () => {
+            newRoom.on(RoomEvent.Connected, async () => {
                 setIsConnected(true)
                 setIsConnecting(false)
                 success('Connected', 'Successfully connected as Agent B - ready to receive transfers')
@@ -193,7 +197,10 @@ function AgentBPageContent() {
                     }])
                 })
 
-                const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/ws/${roomName}`
+                const wsBase = process.env.NEXT_PUBLIC_WS_URL || (typeof window !== 'undefined'
+                    ? `${window.location.protocol === 'https:' ? 'wss://' : 'ws://'}${window.location.host}`
+                    : 'ws://localhost:8000')
+                const wsUrl = `${wsBase}/ws/${roomName}`
                 const ws = new WebSocket(wsUrl)
 
                 ws.onopen = () => {
@@ -211,6 +218,10 @@ function AgentBPageContent() {
                 }
 
                 setWsConnection(ws)
+
+                try {
+                    await newRoom.startAudio()
+                } catch {}
             })
 
             newRoom.on(RoomEvent.Disconnected, () => {
@@ -273,6 +284,9 @@ function AgentBPageContent() {
             }
 
             await newRoom.connect(livekitUrl, token)
+            try {
+                await newRoom.localParticipant.setMicrophoneEnabled(true)
+            } catch {}
             setRoom(newRoom)
             setCurrentRoomName(roomName)
 
