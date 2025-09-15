@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import {
     Phone, Users, ArrowRight, MessageSquare, Volume2
@@ -26,7 +26,7 @@ interface TransferInfo {
     transfer_message?: string
 }
 
-export default function AgentBPage() {
+function AgentBPageContent() {
     const searchParams = useSearchParams()
     const router = useRouter()
     const participantName = searchParams.get('name') || 'Agent B'
@@ -542,5 +542,17 @@ export default function AgentBPage() {
                 )}
             </div>
         </div>
+    )
+}
+
+export default function AgentBPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-[var(--background)] p-4 flex items-center justify-center">
+                <div className="text-white text-xl">Loading...</div>
+            </div>
+        }>
+            <AgentBPageContent />
+        </Suspense>
     )
 }

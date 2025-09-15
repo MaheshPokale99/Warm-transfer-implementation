@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Phone, Users } from 'lucide-react'
 import { Room, RoomEvent, RemoteParticipant, Track, ConnectionState } from 'livekit-client'
@@ -14,7 +14,7 @@ import { useNotification } from '../../components/ui/NotificationProvider'
 
 interface CallerPageProps { }
 
-export default function CallerPage({ }: CallerPageProps) {
+function CallerPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const participantName = searchParams.get('name') || 'Caller'
@@ -627,5 +627,17 @@ export default function CallerPage({ }: CallerPageProps) {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function CallerPage({ }: CallerPageProps) {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[var(--background)] p-4 flex items-center justify-center">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    }>
+      <CallerPageContent />
+    </Suspense>
   )
 }

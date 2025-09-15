@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import {
   Phone, Users, ArrowRight, MessageSquare
@@ -27,7 +27,7 @@ interface TransferInfo {
   created_at: string
 }
 
-export default function AgentPage() {
+function AgentPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const participantName = searchParams.get('name') || 'Agent'
@@ -791,5 +791,17 @@ export default function AgentPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function AgentPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[var(--background)] p-4 flex items-center justify-center">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    }>
+      <AgentPageContent />
+    </Suspense>
   )
 }
