@@ -4,8 +4,16 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Phone, Users } from 'lucide-react'
 import { Room, RoomEvent, RemoteParticipant, Track, ConnectionState } from 'livekit-client'
-import api from '../../lib'
+import axios from 'axios'
 import MainButton from '../../components/ui/MainButton'
+
+const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
 import IOKnob from '../../components/ui/IOKnob'
 import StatusCard from '../../components/ui/StatusCard'
 import NotificationPanel from '../../components/ui/NotificationPanel'

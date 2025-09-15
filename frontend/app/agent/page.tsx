@@ -6,8 +6,16 @@ import {
   Phone, Users, ArrowRight, MessageSquare
 } from 'lucide-react'
 import { Room, RoomEvent, RemoteParticipant, Track } from 'livekit-client'
-import api from '../../lib'
+import axios from 'axios'
 import MainButton from '../../components/ui/MainButton'
+
+const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
 import InputField from '../../components/ui/InputField'
 import IOKnob from '../../components/ui/IOKnob'
 import StatusCard from '../../components/ui/StatusCard'
