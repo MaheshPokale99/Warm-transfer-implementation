@@ -6,7 +6,7 @@ import {
   Phone, Users, ArrowRight, MessageSquare
 } from 'lucide-react'
 import { Room, RoomEvent, RemoteParticipant, Track } from 'livekit-client'
-import api from '@/lib/axios'
+import api from '../../lib/axios'
 import MainButton from '../../components/ui/MainButton'
 import InputField from '../../components/ui/InputField'
 import IOKnob from '../../components/ui/IOKnob'
