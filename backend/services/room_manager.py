@@ -54,14 +54,12 @@ class RoomManager:
         self.conversation_history: Dict[str, List[Dict[str, str]]] = {}
 
     def _get_livekit_api(self):
-        """Get or create LiveKit API instance"""
-        if self.livekit_api is None:
-            self.livekit_api = api.LiveKitAPI(
-                url=self.livekit_url,
-                api_key=self.livekit_api_key,
-                api_secret=self.livekit_api_secret
-            )
-        return self.livekit_api
+        """Create a new LiveKit API instance on each call to avoid closed loop issues in serverless."""
+        return api.LiveKitAPI(
+            url=self.livekit_url,
+            api_key=self.livekit_api_key,
+            api_secret=self.livekit_api_secret
+        )
 
     async def create_room(self, room_name: str, participant_name: str, is_agent: bool = False) -> RoomInfo:
         """Create a new LiveKit room and generate access token"""
@@ -130,8 +128,9 @@ class RoomManager:
         """Join an existing LiveKit room"""
         try:
             # Check if room exists
+            livekit_api = self._get_livekit_api()
             try:
-                room_info = await self.livekit_api.room.list_rooms(api.ListRoomsRequest(names=[room_name]))
+                room_info = await livekit_api.room.list_rooms(api.ListRoomsRequest(names=[room_name]))
                 if not room_info.rooms:
                     raise ValueError(f"Room {room_name} does not exist")
             except Exception as e:

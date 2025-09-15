@@ -89,22 +89,36 @@ function AgentPageContent() {
     }
   }, [room, wsConnection])
 
-  useEffect(() => {
-    const fetchAvailableAgents = async () => {
-      try {
-        const response = await api.get('/api/agents/available')
-        if (response.data && response.data.agents) {
-          setAvailableAgents(response.data.agents)
-        } else {
-          setAvailableAgents([])
-        }
-      } catch (error) {
+  const fetchAvailableAgents = async () => {
+    try {
+      const response = await api.get('/api/agents/available')
+      if (response.data && response.data.agents) {
+        setAvailableAgents(response.data.agents)
+      } else {
         setAvailableAgents([])
       }
+    } catch (_err) {
+      setAvailableAgents([])
     }
+  }
 
+  useEffect(() => {
     fetchAvailableAgents()
   }, [])
+
+  useEffect(() => {
+    if (!isConnected) return
+    const id = setInterval(() => {
+      fetchAvailableAgents()
+    }, 4000)
+    return () => clearInterval(id)
+  }, [isConnected])
+
+  useEffect(() => {
+    if (showAgentSuggestions) {
+      fetchAvailableAgents()
+    }
+  }, [showAgentSuggestions])
 
   const filteredAgents = availableAgents.filter(agent =>
     transferToAgent.length === 0 || agent.toLowerCase().includes(transferToAgent.toLowerCase())
