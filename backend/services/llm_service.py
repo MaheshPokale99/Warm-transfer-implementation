@@ -17,10 +17,15 @@ class LLMService:
     def __init__(self):
         self.openai_client = None
         
-        # Initialize OpenAI client
-        if os.getenv("OPENAI_API_KEY"):
-            self.openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            logger.info("OpenAI client initialized")
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key:
+            try:
+                self.openai_client = openai.OpenAI(api_key=api_key)
+                logger.info("OpenAI client initialized")
+            except Exception as e:
+                self.openai_client = None
+                logger.error(f"OpenAI client initialization failed: {e}")
+                logger.warning("Proceeding with fallback LLM features disabled.")
         else:
             logger.warning("OpenAI API key not found. LLM features will be disabled.")
 

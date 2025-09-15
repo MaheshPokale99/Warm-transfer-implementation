@@ -55,12 +55,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize services
+# Initialize services with detailed error logging
 try:
     room_manager = RoomManager()
     logger.info("Room manager initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize room manager: {e}")
+    logger.error("Please check LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET environment variables")
     room_manager = None
 
 try:
@@ -68,9 +69,21 @@ try:
     logger.info("LLM service initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize LLM service: {e}")
+    logger.error("Please check OPENAI_API_KEY environment variable")
     llm_service = None
 
-transfer_service = TransferService(room_manager, llm_service) if room_manager and llm_service else None
+if room_manager and llm_service:
+    transfer_service = TransferService(room_manager, llm_service)
+    logger.info("Transfer service initialized successfully")
+else:
+    transfer_service = None
+    missing_services = []
+    if not room_manager:
+        missing_services.append("room_manager")
+    if not llm_service:
+        missing_services.append("llm_service")
+    logger.error(f"Transfer service cannot be initialized due to missing dependencies: {missing_services}")
+    logger.error("Transfer functionality will be disabled until all services are properly configured")
 
 try:
     twilio_service = TwilioService() if os.getenv("TWILIO_ACCOUNT_SID") else None
@@ -131,8 +144,12 @@ manager = ConnectionManager()
 @app.post("/api/token/generate")
 async def generate_token(request: RoomCreateRequest):
     """Generate LiveKit access token"""
-    if not room_manager:
-        raise HTTPException(status_code=501, detail="Room manager not available")
+    if room_manager is None:
+        logger.error("Room manager is not available - check service initialization")
+        raise HTTPException(
+            status_code=503, 
+            detail="Room manager is not available. Please check service configuration."
+        )
     
     try:
         room_info = await room_manager.create_room(
@@ -148,8 +165,12 @@ async def generate_token(request: RoomCreateRequest):
 @app.post("/api/rooms/create", response_model=RoomInfo)
 async def create_room(request: RoomCreateRequest):
     """Create a new LiveKit room"""
-    if not room_manager:
-        raise HTTPException(status_code=501, detail="Room manager not available")
+    if room_manager is None:
+        logger.error("Room manager is not available - check service initialization")
+        raise HTTPException(
+            status_code=503, 
+            detail="Room manager is not available. Please check service configuration."
+        )
     
     try:
         room_info = await room_manager.create_room(
@@ -167,6 +188,13 @@ async def create_room(request: RoomCreateRequest):
 async def initiate_transfer(request: TransferRequest):
     """Initiate a warm transfer between agents"""
     try:
+        if transfer_service is None:
+            logger.error("Transfer service is not available - check room_manager and llm_service initialization")
+            raise HTTPException(
+                status_code=503, 
+                detail="Transfer service is not available. Please check service configuration."
+            )
+        
         transfer_info = await transfer_service.initiate_transfer(
             from_room=request.from_room,
             to_room=request.to_room,
@@ -205,6 +233,13 @@ async def initiate_transfer(request: TransferRequest):
 async def complete_transfer(request: TransferCompleteRequest):
     """Complete the warm transfer process"""
     try:
+        if transfer_service is None:
+            logger.error("Transfer service is not available - check room_manager and llm_service initialization")
+            raise HTTPException(
+                status_code=503, 
+                detail="Transfer service is not available. Please check service configuration."
+            )
+        
         result = await transfer_service.complete_transfer(
             transfer_id=request.transfer_id,
             from_room=request.from_room,
@@ -220,6 +255,13 @@ async def complete_transfer(request: TransferCompleteRequest):
 async def generate_summary(request: SummaryRequest):
     """Generate call summary using LLM"""
     try:
+        if llm_service is None:
+            logger.error("LLM service is not available - check service configuration")
+            raise HTTPException(
+                status_code=503, 
+                detail="LLM service is not available. Please check service configuration."
+            )
+        
         summary = await llm_service.generate_call_summary(
             conversation_history=request.conversation_history,
             context=request.context
@@ -256,8 +298,12 @@ async def generate_speech(request: dict):
 async def get_available_agents():
     """Get list of available agents"""
     try:
-        if not room_manager:
-            raise HTTPException(status_code=501, detail="Room manager not available")
+        if room_manager is None:
+            logger.error("Room manager is not available - check service initialization")
+            raise HTTPException(
+                status_code=503, 
+                detail="Room manager is not available. Please check service configuration."
+            )
         
         available_agents = room_manager.get_available_agents()
         logger.info(f"API returning available agents: {available_agents}")
@@ -266,12 +312,16 @@ async def get_available_agents():
         logger.error(f"Error getting available agents: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/transfer/debug/{transfer_id}")
+@app.get("/api/transfer/debug/by/{transfer_id}")
 async def debug_transfer(transfer_id: str):
     """Debug transfer status and details"""
     try:
-        if not transfer_service:
-            raise HTTPException(status_code=501, detail="Transfer service not available")
+        if transfer_service is None:
+            logger.error("Transfer service is not available - check room_manager and llm_service initialization")
+            raise HTTPException(
+                status_code=503, 
+                detail="Transfer service is not available. Please check service configuration."
+            )
         
         transfer_info = await transfer_service.get_transfer_status(transfer_id)
         if not transfer_info:
@@ -294,7 +344,7 @@ async def debug_transfer(transfer_id: str):
 async def get_active_transfers():
     """Get all active transfers"""
     try:
-        if not transfer_service:
+        if transfer_service is None:
             logger.warning("Transfer service not available, returning empty transfers")
             return {"transfers": []}
         
@@ -309,8 +359,12 @@ async def get_active_transfers():
 async def get_room_state(room_name: str):
     """Get room state for persistence"""
     try:
-        if not room_manager:
-            raise HTTPException(status_code=501, detail="Room manager not available")
+        if room_manager is None:
+            logger.error("Room manager is not available - check service initialization")
+            raise HTTPException(
+                status_code=503, 
+                detail="Room manager is not available. Please check service configuration."
+            )
         
         room_state = room_manager.get_room_state(room_name)
         return room_state
@@ -322,8 +376,12 @@ async def get_room_state(room_name: str):
 async def restore_room_state(room_name: str, state: dict):
     """Restore room state after page refresh"""
     try:
-        if not room_manager:
-            raise HTTPException(status_code=501, detail="Room manager not available")
+        if room_manager is None:
+            logger.error("Room manager is not available - check service initialization")
+            raise HTTPException(
+                status_code=503, 
+                detail="Room manager is not available. Please check service configuration."
+            )
         
         room_manager.restore_room_state(room_name, state)
         return {"status": "restored", "room_name": room_name}
@@ -402,8 +460,12 @@ async def detailed_health_check():
 @app.post("/api/twilio/dial")
 async def dial_phone_number(request: TwilioCallRequest):
     """Dial a phone number and connect to LiveKit room"""
-    if not twilio_service:
-        raise HTTPException(status_code=501, detail="Twilio service not configured")
+    if twilio_service is None:
+        logger.error("Twilio service is not available - check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN environment variables")
+        raise HTTPException(
+            status_code=503, 
+            detail="Twilio service is not available. Please check Twilio configuration."
+        )
     
     try:
         result = await twilio_service.dial_and_connect(request.phone_number, request.room_name)
@@ -414,6 +476,18 @@ async def dial_phone_number(request: TwilioCallRequest):
 
 if __name__ == "__main__":
     import uvicorn
+    
+    # Log service initialization status
+    logger.info("=== Warm Transfer API Service Status ===")
+    logger.info(f"Room Manager: {'✓ Available' if room_manager else '✗ Failed'}")
+    logger.info(f"LLM Service: {'✓ Available' if llm_service else '✗ Failed'}")
+    logger.info(f"Transfer Service: {'✓ Available' if transfer_service else '✗ Failed'}")
+    logger.info(f"Twilio Service: {'✓ Available' if twilio_service else '✗ Not Configured'}")
+    logger.info("========================================")
+    
+    if not transfer_service:
+        logger.warning("WARNING: Transfer functionality is disabled due to missing service dependencies!")
+        logger.warning("Check /api/health endpoint for detailed service configuration status")
     
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", 8000))
